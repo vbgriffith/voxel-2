@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Hollow Knight Type Game (SVG Assets)</title>
+  <title>Hollow Knight Type Game (SVG Upgrade)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
   <style>
@@ -14,21 +14,37 @@
 
 <script>
 /* -------------------------------------------------------
-   SVG TEXTURES
+   SVG TEXTURES (64×64)
 ------------------------------------------------------- */
 
-// Simple “n‑game style” character (white silhouette)
+/* Minimalist Hollow‑Knight‑Inspired Player (64×64)
+   - White mask
+   - Smooth horns
+   - Black cloak
+*/
 const PLAYER_SVG = `
-<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="16" cy="10" r="8" fill="white"/>
-  <rect x="10" y="18" width="12" height="12" rx="4" fill="white"/>
+<svg width="64" height="64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mask -->
+  <ellipse cx="32" cy="22" rx="14" ry="16" fill="white"/>
+  <!-- Horns -->
+  <path d="M18 10 C10 0, 6 14, 14 22" fill="white"/>
+  <path d="M46 10 C54 0, 58 14, 50 22" fill="white"/>
+  <!-- Eyes -->
+  <circle cx="26" cy="22" r="4" fill="black"/>
+  <circle cx="38" cy="22" r="4" fill="black"/>
+  <!-- Cloak -->
+  <path d="M16 32 Q32 60 48 32 Q32 40 16 32" fill="black"/>
 </svg>`;
 
-// Simple stone tile
+/* Minimalist Cavern Stone Tile (64×32)
+   - Soft bevel
+   - Subtle shading
+*/
 const TILE_SVG = `
 <svg width="64" height="32" xmlns="http://www.w3.org/2000/svg">
-  <rect width="64" height="32" fill="#444"/>
-  <rect width="64" height="32" fill="none" stroke="#666" stroke-width="3"/>
+  <rect width="64" height="32" fill="#3a3a3a"/>
+  <rect width="64" height="32" fill="none" stroke="#555" stroke-width="3"/>
+  <rect width="64" height="32" fill="none" stroke="#222" stroke-width="1"/>
 </svg>`;
 
 
@@ -45,8 +61,7 @@ class MainScene extends Phaser.Scene {
   constructor() { super('MainScene'); }
 
   preload() {
-    // Convert SVG → Phaser texture
-    this.svgTexture('player', PLAYER_SVG, 32, 32);
+    this.svgTexture('player', PLAYER_SVG, 64, 64);
     this.svgTexture('tile', TILE_SVG, 64, 32);
   }
 
@@ -62,7 +77,7 @@ class MainScene extends Phaser.Scene {
 
     this.player = this.physics.add.sprite(200, 200, 'player');
     this.player.setCollideWorldBounds(true);
-    this.player.setSize(18, 28).setOffset(7, 4);
+    this.player.setSize(24, 40).setOffset(20, 12);
 
     this.playerState = {
       canDoubleJump: true,
@@ -76,7 +91,7 @@ class MainScene extends Phaser.Scene {
 
     this.attackHitbox = this.physics.add.sprite(this.player.x, this.player.y, null);
     this.attackHitbox.body.setAllowGravity(false);
-    this.attackHitbox.setSize(30, 20);
+    this.attackHitbox.setSize(40, 20);
     this.attackHitbox.setVisible(false);
 
     this.physics.add.collider(this.player, this.platforms);
@@ -192,7 +207,7 @@ class MainScene extends Phaser.Scene {
       this.playerState.isAttacking = true;
       this.playerState.attackTime = 0.18;
 
-      const offsetX = this.playerState.facing * 24;
+      const offsetX = this.playerState.facing * 30;
       this.attackHitbox.setPosition(this.player.x + offsetX, this.player.y);
       this.attackHitbox.setVisible(true);
     }
@@ -200,7 +215,7 @@ class MainScene extends Phaser.Scene {
     if (this.playerState.isAttacking) {
       this.playerState.attackTime -= dt;
 
-      const offsetX = this.playerState.facing * 24;
+      const offsetX = this.playerState.facing * 30;
       this.attackHitbox.setPosition(this.player.x + offsetX, this.player.y);
 
       if (this.playerState.attackTime <= 0) {
@@ -210,7 +225,6 @@ class MainScene extends Phaser.Scene {
     }
   }
 
-  /* Convert SVG string → Phaser texture */
   svgTexture(key, svg, w, h) {
     const img = new Image();
     const blob = new Blob([svg], { type: "image/svg+xml" });
