@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js RTS Single File</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: sans-serif;
+      user-select: none;
+    }
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 32px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 12px;
+      padding: 4px 8px;
+      z-index: 10;
+    }
+    #selectionBox {
+      position: fixed;
+      border: 1px solid #0ff;
+      background: rgba(0,255,255,0.1);
+      pointer-events: none;
+      display: none;
+      z-index: 9;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  Left-drag: select units | Right-click: move/attack | WASD: pan camera | Q/E: rotate | R/F: zoom
+</div>
+<div id="selectionBox"></div>
+
+<!-- Three.js from CDN (no imports) -->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+<script>
+(function() {
+  // -------------------------------------------------
+  // Basic setup
+  // -------------------------------------------------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x202030);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  const camera = new THREE.PerspectiveCamera(
+    60,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
+
+  // RTS-style top-down-ish camera
+  camera.position.set(0, 40, 40);
+  camera.lookAt(0, 0, 0);
+
+  // Lights
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+  hemiLight.position.set(0, 50, 0);
+  scene.add(hemiLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(30, 50, 30);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(2048, 2048);
+  scene.add(dirLight);
+
+  // Ground
+  const groundGeo = new THREE.PlaneGeometry(200, 200);
+  const groundMat = new THREE.MeshPhongMaterial({ color: 0x335533 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  ground.name = "GROUND";
+  scene.add(ground);
+
+  // -------------------------------------------------
+  // Game entities
+  // -------------------------------------------------
+  const units = [];
+  const enemies = [];
+  const projectiles = [];
+
+  const UNIT_RADIUS = 0.7;
+  const ENEMY_RADIUS = 0.9;
+
+  const UNIT_SPEED = 8;
+  const ENEMY_SPEED = 4;
+  const UNIT_ATTACK_RANGE = 6;
+  const ENEMY_ATTACK_RANGE = 4;
+  const UNIT_ATTACK_COOLDOWN = 0.8;
+  const ENEMY_ATTACK_COOLDOWN = 1.2;
+  const PROJECTILE_SPEED = 25;
+  const UNIT_MAX_HP = 100;
+  const ENEMY_MAX_HP = 120;
+
+  const unitGeometry = new THREE.CylinderGeometry(0, 0.7, 1.5, 6);
+  const unitMaterial = new THREE.MeshPhongMaterial({ color: 0x00aaff });
+  const unitSelectedMaterial = new THREE.MeshPhongMaterial({ color: 0x00ffcc });
+
+  const enemyGeometry = new THREE.BoxGeometry(1.4, 1.4, 1.4);
+  const enemyMaterial = new THREE.MeshPhongMaterial({ color: 0xff4444 });
+
+  const projectileGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+  const projectileMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+
+  function createUnit(x, z) {
+    const mesh = new THREE.Mesh(unitGeometry, unitMaterial.clone());
+    mesh.castShadow = true;
+    mesh.position.set(x, 0.75, z);
+    scene.add(mesh);
+
+    const unit = {
+      type: "unit",
+      mesh,
+      pos: mesh.position,
+      targetPos: null,
+      targetEnemy: null,
+      hp: UNIT_MAX_HP,
+      attackCooldown: 0,
+      selected: false
+    };
+    units.push(unit);
+    return unit;
+  }
+
+  function createEnemy(x, z) {
+    const mesh = new THREE.Mesh(enemyGeometry, enemyMaterial.clone());
+    mesh.castShadow = true;
+    mesh.position.set(x, 0.7, z);
+    scene.add(mesh);
+
+    const enemy = {
+      type: "enemy",
+      mesh,
+      pos: mesh.position,
+      targetUnit: null,
+      hp: ENEMY_MAX_HP,
+      attackCooldown: 0
+    };
+    enemies.push(enemy);
+    return enemy;
+  }
+
+  function createProjectile(from, to, damage, ownerType) {
+    const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial.clone());
+    mesh.position.copy(from);
+    scene.add(mesh);
+
+    const dir = new THREE.Vector3().subVectors(to, from).normalize();
+    const projectile = {
+      mesh,
+      pos: mesh.position,
+      dir,
+      damage,
+      ownerType,
+      life: 3
+    };
+    projectiles.push(projectile);
+  }
+
+  // Spawn some units and enemies
+  for (let i = 0; i < 6; i++) {
+    createUnit(-10 + i * 3, -5 + (i % 2) * 3);
+  }
+  for (let i = 0; i < 5; i++) {
+    createEnemy(10 + i * 3, 5 + (i % 2) * 3);
+  }
+
+  // -------------------------------------------------
+  // Input handling
+  // -------------------------------------------------
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  let isLeftMouseDown = false;
+  let isRightMouseDown = false;
+  let dragStart = { x: 0, y: 0 };
+  let dragEnd = { x: 0, y: 0 };
+  const selectionBoxEl = document.getElementById("selectionBox");
+
+  const keys = {};
+  window.addEventListener("keydown", (e) => { keys[e.code] = true; });
+  window.addEventListener("keyup", (e) => { keys[e.code] = false; });
+
+  renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  renderer.domElement.addEventListener("mousedown", (e) => {
+    if (e.button === 0) {
+      isLeftMouseDown = true;
+      dragStart.x = e.clientX;
+      dragStart.y = e.clientY;
+      dragEnd.x = e.clientX;
+      dragEnd.y = e.clientY;
+      updateSelectionBox();
+      selectionBoxEl.style.display = "block";
+    } else if (e.button === 2) {
+      isRightMouseDown = true;
+    }
+  });
+
+  renderer.domElement.addEventListener("mouseup", (e) => {
+    if (e.button === 0) {
+      isLeftMouseDown = false;
+      selectionBoxEl.style.display = "none";
+      if (Math.hypot(dragEnd.x - dragStart.x, dragEnd.y - dragStart.y) < 4) {
+        handleClickSelect(e.clientX, e.clientY);
+      } else {
+        handleDragSelect();
+      }
+    } else if (e.button === 2) {
+      isRightMouseDown = false;
+      handleRightClick(e.clientX, e.clientY);
+    }
+  });
+
+  renderer.domElement.addEventListener("mousemove", (e) => {
+    if (isLeftMouseDown) {
+      dragEnd.x = e.clientX;
+      dragEnd.y = e.clientY;
+      updateSelectionBox();
+    }
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  });
+
+  function updateSelectionBox() {
+    const x = Math.min(dragStart.x, dragEnd.x);
+    const y = Math.min(dragStart.y, dragEnd.y);
+    const w = Math.abs(dragEnd.x - dragStart.x);
+    const h = Math.abs(dragEnd.y - dragStart.y);
+    selectionBoxEl.style.left = x + "px";
+    selectionBoxEl.style.top = y + "px";
+    selectionBoxEl.style.width = w + "px";
+    selectionBoxEl.style.height = h + "px";
+  }
+
+  function screenToWorldOnGround(screenX, screenY) {
+    const ndc = new THREE.Vector2(
+      (screenX / window.innerWidth) * 2 - 1,
+      -(screenY / window.innerHeight) * 2 + 1
+    );
+    raycaster.setFromCamera(ndc, camera);
+    const intersects = raycaster.intersectObject(ground);
+    if (intersects.length > 0) {
+      return intersects[0].point.clone();
+    }
+    return null;
+  }
+
+  function handleClickSelect(clientX, clientY) {
+    const worldPoint = screenToWorldOnGround(clientX, clientY);
+    if (!worldPoint) return;
+
+    // Raycast against units/enemies
+    const ndc = new THREE.Vector2(
+      (clientX / window.innerWidth) * 2 - 1,
+      -(clientY / window.innerHeight) * 2 + 1
+    );
+    raycaster.setFromCamera(ndc, camera);
+    const selectableMeshes = units.map(u => u.mesh).concat(enemies.map(e => e.mesh));
+    const intersects = raycaster.intersectObjects(selectableMeshes, false);
+
+    if (intersects.length > 0) {
+      const obj = intersects[0].object;
+      let clickedUnit = units.find(u => u.mesh === obj);
+      if (clickedUnit) {
+        clearSelection();
+        setUnitSelected(clickedUnit, true);
+        return;
+      }
+      // If clicked enemy, keep current selection (for attack commands via right-click)
+    } else {
+      clearSelection();
+    }
+  }
+
+  function handleDragSelect() {
+    const minX = Math.min(dragStart.x, dragEnd.x);
+    const maxX = Math.max(dragStart.x, dragEnd.x);
+    const minY = Math.min(dragStart.y, dragEnd.y);
+    const maxY = Math.max(dragStart.y, dragEnd.y);
+
+    clearSelection();
+    for (const u of units) {
+      const pos = u.mesh.position.clone();
+      const projected = pos.project(camera);
+      const sx = (projected.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-projected.y * 0.5 + 0.5) * window.innerHeight;
+      if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
+        setUnitSelected(u, true);
+      }
+    }
+  }
+
+  function clearSelection() {
+    for (const u of units) {
+      setUnitSelected(u, false);
+    }
+  }
+
+  function setUnitSelected(unit, selected) {
+    unit.selected = selected;
+    unit.mesh.material = selected ? unitSelectedMaterial.clone() : unitMaterial.clone();
+  }
+
+  function handleRightClick(clientX, clientY) {
+    const ndc = new THREE.Vector2(
+      (clientX / window.innerWidth) * 2 - 1,
+      -(clientY / window.innerHeight) * 2 + 1
+    );
+    raycaster.setFromCamera(ndc, camera);
+    const selectableMeshes = enemies.map(e => e.mesh).concat([ground]);
+    const intersects = raycaster.intersectObjects(selectableMeshes, false);
+    if (intersects.length === 0) return;
+
+    const hit = intersects[0];
+    if (hit.object === ground) {
+      const dest = hit.point.clone();
+      issueMoveCommand(dest);
+    } else {
+      const enemy = enemies.find(en => en.mesh === hit.object);
+      if (enemy) {
+        issueAttackCommand(enemy);
+      }
+    }
+  }
+
+  function issueMoveCommand(dest) {
+    const selectedUnits = units.filter(u => u.selected);
+    if (selectedUnits.length === 0) return;
+
+    // Simple formation: grid around dest
+    const cols = Math.ceil(Math.sqrt(selectedUnits.length));
+    const spacing = 2.5;
+    const startX = dest.x - (cols - 1) * spacing * 0.5;
+    const startZ = dest.z - (cols - 1) * spacing * 0.5;
+
+    let i = 0;
+    for (const u of selectedUnits) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      u.targetPos = new THREE.Vector3(
+        startX + col * spacing,
+        0,
+        startZ + row * spacing
+      );
+      u.targetEnemy = null;
+      i++;
+    }
+  }
+
+  function issueAttackCommand(enemy) {
+    const selectedUnits = units.filter(u => u.selected);
+    if (selectedUnits.length === 0) return;
+
+    for (const u of selectedUnits) {
+      u.targetEnemy = enemy;
+      u.targetPos = null;
+    }
+  }
+
+  // -------------------------------------------------
+  // Camera controls (WASD + QE rotate + RF zoom + edge pan)
+  // -------------------------------------------------
+  const cameraTarget = new THREE.Vector3(0, 0, 0);
+  let cameraYaw = -Math.PI / 4;
+  let cameraPitch = Math.PI / 4;
+  let cameraDistance = 60;
+
+  function updateCamera(dt) {
+    const moveSpeed = 30;
+    const rotSpeed = 1.5;
+    const zoomSpeed = 40;
+
+    // Keyboard movement in camera plane
+    let forward = 0;
+    let right = 0;
+
+    if (keys["KeyW"]) forward += 1;
+    if (keys["KeyS"]) forward -= 1;
+    if (keys["KeyD"]) right += 1;
+    if (keys["KeyA"]) right -= 1;
+
+    // Edge pan
+    const edgeSize = 20;
+    const mx = (mouse.x * 0.5 + 0.5) * window.innerWidth;
+    const my = (-mouse.y * 0.5 + 0.5) * window.innerHeight;
+    if (mx < edgeSize) right -= 1;
+    if (mx > window.innerWidth - edgeSize) right += 1;
+    if (my < edgeSize) forward += 1;
+    if (my > window.innerHeight - edgeSize) forward -= 1;
+
+    const forwardVec = new THREE.Vector3(
+      Math.sin(cameraYaw),
+      0,
+      Math.cos(cameraYaw)
+    );
+    const rightVec = new THREE.Vector3().crossVectors(forwardVec, new THREE.Vector3(0,1,0)).negate();
+
+    if (forward !== 0 || right !== 0) {
+      const moveDir = new THREE.Vector3()
+        .addScaledVector(forwardVec, forward)
+        .addScaledVector(rightVec, right)
+        .normalize();
+      cameraTarget.addScaledVector(moveDir, moveSpeed * dt);
+    }
+
+    if (keys["KeyQ"]) cameraYaw += rotSpeed * dt;
+    if (keys["KeyE"]) cameraYaw -= rotSpeed * dt;
+
+    if (keys["KeyR"]) cameraDistance -= zoomSpeed * dt;
+    if (keys["KeyF"]) cameraDistance += zoomSpeed * dt;
+    cameraDistance = Math.max(20, Math.min(120, cameraDistance));
+
+    const x = cameraTarget.x + cameraDistance * Math.sin(cameraYaw) * Math.cos(cameraPitch);
+    const z = cameraTarget.z + cameraDistance * Math.cos(cameraYaw) * Math.cos(cameraPitch);
+    const y = cameraTarget.y + cameraDistance * Math.sin(cameraPitch);
+
+    camera.position.set(x, y, z);
+    camera.lookAt(cameraTarget);
+  }
+
+  // -------------------------------------------------
+  // Game update
+  // -------------------------------------------------
+  let lastTime = performance.now();
+
+  function update() {
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+
+    updateCamera(dt);
+    updateUnits(dt);
+    updateEnemies(dt);
+    updateProjectiles(dt);
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(update);
+  }
+
+  function updateUnits(dt) {
+    for (const u of units) {
+      if (u.hp <= 0) continue;
+
+      // Movement
+      if (u.targetPos) {
+        const dir = new THREE.Vector3().subVectors(u.targetPos, u.pos);
+        const dist = dir.length();
+        if (dist > 0.1) {
+          dir.normalize();
+          u.pos.addScaledVector(dir, UNIT_SPEED * dt);
+          const angle = Math.atan2(dir.x, dir.z);
+          u.mesh.rotation.y = angle;
+        } else {
+          u.targetPos = null;
+        }
+      }
+
+      // Attack logic
+      u.attackCooldown -= dt;
+      if (u.targetEnemy && u.targetEnemy.hp > 0) {
+        const distToEnemy = u.pos.distanceTo(u.targetEnemy.pos);
+        if (distToEnemy > UNIT_ATTACK_RANGE * 0.8) {
+          // Move closer
+          const dir = new THREE.Vector3().subVectors(u.targetEnemy.pos, u.pos).setY(0);
+          const dist = dir.length();
+          if (dist > 0.1) {
+            dir.normalize();
+            u.pos.addScaledVector(dir, UNIT_SPEED * dt);
+            const angle = Math.atan2(dir.x, dir.z);
+            u.mesh.rotation.y = angle;
+          }
+        } else {
+          // In range, attack
+          if (u.attackCooldown <= 0) {
+            u.attackCooldown = UNIT_ATTACK_COOLDOWN;
+            createProjectile(
+              new THREE.Vector3(u.pos.x, u.pos.y + 1, u.pos.z),
+              new THREE.Vector3(u.targetEnemy.pos.x, u.targetEnemy.pos.y + 0.7, u.targetEnemy.pos.z),
+              15,
+              "unit"
+            );
+          }
+        }
+      } else {
+        u.targetEnemy = null;
+      }
+    }
+  }
+
+  function updateEnemies(dt) {
+    for (const e of enemies) {
+      if (e.hp <= 0) continue;
+
+      // Simple AI: find nearest unit
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const u of units) {
+        if (u.hp <= 0) continue;
+        const d = e.pos.distanceTo(u.pos);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearest = u;
+        }
+      }
+      e.targetUnit = nearest;
+
+      e.attackCooldown -= dt;
+      if (e.targetUnit) {
+        const dist = e.pos.distanceTo(e.targetUnit.pos);
+        if (dist > ENEMY_ATTACK_RANGE * 0.8) {
+          const dir = new THREE.Vector3().subVectors(e.targetUnit.pos, e.pos).setY(0);
+          const len = dir.length();
+          if (len > 0.1) {
+            dir.normalize();
+            e.pos.addScaledVector(dir, ENEMY_SPEED * dt);
+            const angle = Math.atan2(dir.x, dir.z);
+            e.mesh.rotation.y = angle;
+          }
+        } else {
+          if (e.attackCooldown <= 0) {
+            e.attackCooldown = ENEMY_ATTACK_COOLDOWN;
+            createProjectile(
+              new THREE.Vector3(e.pos.x, e.pos.y + 0.7, e.pos.z),
+              new THREE.Vector3(e.targetUnit.pos.x, e.targetUnit.pos.y + 1, e.targetUnit.pos.z),
+              10,
+              "enemy"
+            );
+          }
+        }
+      }
+    }
+  }
+
+  function updateProjectiles(dt) {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+      const p = projectiles[i];
+      p.pos.addScaledVector(p.dir, PROJECTILE_SPEED * dt);
+      p.life -= dt;
+
+      let hit = false;
+      if (p.ownerType === "unit") {
+        for (const e of enemies) {
+          if (e.hp <= 0) continue;
+          const d = p.pos.distanceTo(e.pos);
+          if (d < ENEMY_RADIUS) {
+            e.hp -= p.damage;
+            if (e.hp <= 0) {
+              e.hp = 0;
+              scene.remove(e.mesh);
+            }
+            hit = true;
+            break;
+          }
+        }
+      } else if (p.ownerType === "enemy") {
+        for (const u of units) {
+          if (u.hp <= 0) continue;
+          const d = p.pos.distanceTo(u.pos);
+          if (d < UNIT_RADIUS) {
+            u.hp -= p.damage;
+            if (u.hp <= 0) {
+              u.hp = 0;
+              scene.remove(u.mesh);
+              u.selected = false;
+            }
+            hit = true;
+            break;
+          }
+        }
+      }
+
+      if (hit || p.life <= 0) {
+        scene.remove(p.mesh);
+        projectiles.splice(i, 1);
+      }
+    }
+  }
+
+  // -------------------------------------------------
+  // Resize
+  // -------------------------------------------------
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // -------------------------------------------------
+  // Start
+  // -------------------------------------------------
+  update();
+})();
+</script>
+</body>
+</html>
