@@ -1,0 +1,2830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hollow-Like Knight – Core Engine Upgrade</title>
+  <style>
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #1a1a3a 0, #050510 55%, #000000 100%);
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #game-container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas {
+      box-shadow: 0 0 40px rgba(0, 0, 0, 0.8),
+                  0 0 80px rgba(80, 120, 255, 0.4);
+      border-radius: 8px;
+    }
+
+    .hud {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #e0e4ff;
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+      z-index: 10;
+      pointer-events: none;
+      background: linear-gradient(to right, rgba(10,10,30,0.8), rgba(10,10,30,0.2));
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(120, 140, 255, 0.4);
+      white-space: nowrap;
+    }
+
+    .hud span {
+      margin-right: 16px;
+    }
+
+    .center-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #f5f5ff;
+      font-size: 18px;
+      text-align: center;
+      z-index: 20;
+      pointer-events: none;
+      white-space: pre-line;
+      text-shadow: 0 0 10px rgba(0, 0, 0, 0.9);
+      padding: 12px 18px;
+      background: radial-gradient(circle, rgba(10,10,40,0.9), rgba(5,5,20,0.6));
+      border-radius: 12px;
+      border: 1px solid rgba(160, 180, 255, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container"></div>
+  <div class="hud">
+    <span id="health">HP: 5</span>
+    <span id="soul">SOUL: 0</span>
+    <span id="weapon">Weapon: Nail</span>
+    <span id="region">Region: Caverns</span>
+    <span id="status"></span>
+  </div>
+  <div class="center-overlay" id="center-overlay"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.90.0/phaser.min.js"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+
+  <script>
+    const GAME_WIDTH = 960;
+    const GAME_HEIGHT = 540;
+    const WORLD_WIDTH = 12000;
+
+    const GameState = {
+      maxHealth: 5,
+      health: 5,
+      soul: 0,
+      lastBenchX: 200,
+      lastBenchY: GAME_HEIGHT - 120,
+      bossDefeated: false,
+      inventory: {},
+      region: "caverns",
+      map: new Array(24000).fill(false),
+      abilities: {
+        doubleJump: true,
+        dash: true,
+        wallJump: false
+      },
+      weapons: {
+        nail: { name: "Nail", dmg: 1, range: 40, cooldown: 150 }
+      },
+      currentWeapon: "nail",
+      weaponCooldown: false
+    };
+
+    class MenuScene extends Phaser.Scene {
+      constructor() {
+        super('MenuScene');
+      }
+
+      create() {
+        const { width, height } = this.scale;
+
+        this.add.rectangle(0, 0, width * 2, height * 2, 0x050510).setOrigin(0, 0);
+
+        this.add.text(width / 2, height / 2 - 140,
+          'In the forgotten caverns of Lumenfall,\n' +
+          'a sickness spreads through the ancient husks.\n' +
+          'Only a wandering Knight can uncover the truth.',
+          {
+            fontFamily: 'serif',
+            fontSize: '18px',
+            color: '#bbbbff',
+            align: 'center'
+          }
+        ).setOrigin(0.5);
+
+        this.add.text(width / 2, height / 2 - 60, 'HOLLOW-LIKE KNIGHT', {
+          fontFamily: 'sans-serif',
+          fontSize: '40px',
+          color: '#ffffff'
+        }).setOrigin(0.5);
+
+        this.add.text(width / 2, height / 2, 'Press ENTER to Begin', {
+          fontFamily: 'sans-serif',
+          fontSize: '20px',
+          color: '#ccccff'
+        }).setOrigin(0.5);
+
+        this.add.text(width / 2, height / 2 + 60,
+          'Arrows: Move/Jump  |  Z: Attack  |  X: Dash',
+          {
+            fontFamily: 'sans-serif',
+            fontSize: '14px',
+            color: '#aaaaee'
+          }
+        ).setOrigin(0.5);
+
+        this.input.keyboard.once('keydown-ENTER', () => {
+          GameState.health = GameState.maxHealth;
+          GameState.soul = 0;
+          GameState.bossDefeated = false;
+          this.scene.start('GameScene');
+        });
+      }
+    }
+
+    class GameScene extends Phaser.Scene {
+      constructor() {
+        super('GameScene');
+
+        this.player = null;
+        this.cursors = null;
+        this.attackKey = null;
+        this.dashKey = null;
+        this.groundLayer = null;
+        this.enemies = null;
+        this.attackHitbox = null;
+        this.attackActive = false;
+        this.doubleJumpAvailable = true;
+        this.canTakeDamage = true;
+        this.dashing = false;
+        this.dashCooldown = false;
+        this.parallaxLayers = [];
+        this.particles = {};
+        this.lightMask = null;
+      }
+
+      preload() {
+        this.createGeneratedTextures();
+      }
+
+      createGeneratedTextures() {
+        const g = this.add.graphics();
+
+        // PLAYER
+        g.clear();
+        g.fillStyle(0xffffff, 1);
+        g.fillRoundedRect(0, 0, 20, 30, 4);
+        g.fillStyle(0x222244, 1);
+        g.fillRect(4, 6, 12, 10);
+        g.fillStyle(0x88ccff, 1);
+        g.fillRect(8, 20, 4, 8);
+        g.generateTexture('player', 20, 30);
+
+        // ENEMY
+        g.clear();
+        g.fillStyle(0x552222, 1);
+        g.fillRoundedRect(0, 0, 24, 24, 6);
+        g.fillStyle(0xff4444, 1);
+        g.fillRect(4, 6, 6, 6);
+        g.fillRect(14, 6, 6, 6);
+        g.generateTexture('enemy', 24, 24);
+
+        // PLATFORM
+        g.clear();
+        g.fillStyle(0x303040, 1);
+        g.fillRect(0, 0, 64, 16);
+        g.lineStyle(2, 0x606080, 1);
+        g.strokeRect(0, 0, 64, 16);
+        g.generateTexture('platform', 64, 16);
+
+        // GROUND
+        g.clear();
+        g.fillStyle(0x181820, 1);
+        g.fillRect(0, 0, 128, 32);
+        g.fillStyle(0x303040, 1);
+        for (let i = 0; i < 8; i++) {
+          g.fillRect(i * 16 + 2, 4, 12, 6);
+        }
+        g.generateTexture('ground', 128, 32);
+
+        // HITBOX
+        g.clear();
+        g.fillStyle(0xff0000, 0.3);
+        g.fillRect(0, 0, 32, 32);
+        g.generateTexture('hitbox', 32, 32);
+
+        // DUST PARTICLE
+        g.clear();
+        g.fillStyle(0xffffff, 0.8);
+        g.fillCircle(4, 4, 4);
+        g.generateTexture('dust', 8, 8);
+
+        // SLASH PARTICLE
+        g.clear();
+        g.fillStyle(0x88ccff, 0.9);
+        g.fillRect(0, 0, 16, 4);
+        g.generateTexture('slash', 16, 4);
+
+        g.destroy();
+      }
+
+      create() {
+        this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
+        this.physics.world.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
+
+        this.createParallaxBackground();
+        this.createPlatforms();
+        this.createPlayer();
+        this.createAttackHitbox();
+        this.createEnemies();
+        this.createParticles();
+        this.createLightingMask();
+
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.attackKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+        this.dashKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+
+        this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+
+        this.physics.add.collider(this.player, this.groundLayer, this.onPlayerLand, null, this);
+        this.physics.add.collider(this.enemies, this.groundLayer);
+
+        this.physics.add.overlap(this.player, this.enemies, this.onPlayerEnemyOverlap, null, this);
+        this.physics.add.overlap(this.attackHitbox, this.enemies, this.onAttackHitEnemy, null, this);
+
+        this.updateHUD();
+        this.showCenterMessage('Descend into the caverns.\nFeel the weight of the silence.');
+      }
+
+      createParallaxBackground() {
+        const back = this.add.rectangle(0, 0, WORLD_WIDTH, GAME_HEIGHT, 0x050518).setOrigin(0, 0);
+        const mid = this.add.rectangle(0, GAME_HEIGHT * 0.2, WORLD_WIDTH, GAME_HEIGHT * 0.8, 0x0a0a30).setOrigin(0, 0);
+        const fore = this.add.rectangle(0, GAME_HEIGHT * 0.5, WORLD_WIDTH, GAME_HEIGHT * 0.5, 0x101030).setOrigin(0, 0);
+
+        this.parallaxLayers.push({ obj: back, factor: 0.2 });
+        this.parallaxLayers.push({ obj: mid, factor: 0.4 });
+        this.parallaxLayers.push({ obj: fore, factor: 0.7 });
+      }
+
+      createPlatforms() {
+        this.groundLayer = this.physics.add.staticGroup();
+
+        const floor = this.groundLayer.create(WORLD_WIDTH / 2, GAME_HEIGHT - 16, 'ground');
+        floor.setDisplaySize(WORLD_WIDTH, 32);
+        floor.refreshBody();
+
+        const platformData = [
+          { x: 400, y: 380 }, { x: 700, y: 320 }, { x: 1000, y: 260 },
+          { x: 1600, y: 320 }, { x: 1900, y: 260 }, { x: 2200, y: 320 },
+          { x: 2800, y: 380 }, { x: 3100, y: 320 }, { x: 3400, y: 260 },
+          { x: 4000, y: 320 }, { x: 4300, y: 260 }, { x: 4600, y: 320 }
+        ];
+
+        platformData.forEach(p => {
+          const plat = this.groundLayer.create(p.x, p.y, 'platform');
+          plat.setDisplaySize(200, 16);
+          plat.refreshBody();
+        });
+      }
+
+      createPlayer() {
+        this.player = this.physics.add.sprite(GameState.lastBenchX, GameState.lastBenchY, 'player');
+        this.player.setDisplaySize(20, 30);
+        this.player.setCollideWorldBounds(true);
+        this.player.setDragX(900);
+        this.player.setMaxVelocity(420, 1000);
+        this.player.body.setSize(20, 30);
+        this.player.facing = 'right';
+        this.player.lastOnGround = true;
+      }
+
+      createAttackHitbox() {
+        this.attackHitbox = this.physics.add.sprite(this.player.x, this.player.y, 'hitbox');
+        this.attackHitbox.setVisible(false);
+        this.attackHitbox.body.setAllowGravity(false);
+        this.attackHitbox.body.setSize(32, 32);
+        this.attackHitbox.weaponDamage = 1;
+      }
+
+      createEnemies() {
+        this.enemies = this.physics.add.group({ allowGravity: true, immovable: false });
+
+        const enemyPositions = [
+          { x: 800, y: GAME_HEIGHT - 100 },
+          { x: 1700, y: GAME_HEIGHT - 100 },
+          { x: 2100, y: GAME_HEIGHT - 100 }
+        ];
+
+        enemyPositions.forEach(pos => {
+          const enemy = this.enemies.create(pos.x, pos.y, 'enemy');
+          enemy.setDisplaySize(24, 24);
+          enemy.body.setSize(24, 24);
+          enemy.setCollideWorldBounds(true);
+          enemy.setBounce(1, 0);
+          enemy.setVelocityX(Phaser.Math.Between(-80, -40));
+          enemy.patrolRange = { minX: pos.x - 150, maxX: pos.x + 150 };
+          enemy.hp = 2;
+        });
+      }
+
+      createParticles() {
+        this.particles.dust = this.add.particles('dust');
+        this.particles.slash = this.add.particles('slash');
+
+        this.dustEmitter = this.particles.dust.createEmitter({
+          speed: { min: -40, max: 40 },
+          angle: { min: 260, max: 280 },
+          lifespan: 400,
+          quantity: 4,
+          scale: { start: 1, end: 0 },
+          alpha: { start: 0.8, end: 0 },
+          on: false
+        });
+
+        this.slashEmitter = this.particles.slash.createEmitter({
+          speed: { min: -60, max: 60 },
+          angle: { min: -10, max: 10 },
+          lifespan: 200,
+          quantity: 3,
+          scale: { start: 1, end: 0 },
+          alpha: { start: 1, end: 0 },
+          on: false
+        });
+      }
+
+      createLightingMask() {
+        const rt = this.make.renderTexture({
+          x: 0,
+          y: 0,
+          width: GAME_WIDTH,
+          height: GAME_HEIGHT,
+          add: false
+        });
+
+        this.lightMask = rt;
+        this.cameras.main.setMask(rt.createBitmapMask());
+      }
+
+      updateLighting() {
+        const cam = this.cameras.main;
+        const px = this.player.x - cam.scrollX;
+        const py = this.player.y - cam.scrollY;
+
+        this.lightMask.clear();
+        this.lightMask.fill(0x000000, 0.95);
+        this.lightMask.erase(
+          (rt => {
+            const g = this.add.graphics();
+            g.fillStyle(0xffffff, 1);
+            g.fillCircle(px, py, 140);
+            rt.draw(g);
+            g.destroy();
+            return rt;
+          })(this.make.renderTexture({ x: 0, y: 0, width: GAME_WIDTH, height: GAME_HEIGHT, add: false })),
+          0, 0
+        );
+      }
+
+      update(time, delta) {
+        this.handlePlayerMovement();
+        this.handleAttack();
+        this.handleDash();
+        this.updateParallax();
+        this.updateEnemies();
+        this.updateRegion();
+        this.updateMap();
+        this.updateLighting();
+      }
+
+      handlePlayerMovement() {
+        const onGround = this.player.body.blocked.down;
+
+        if (onGround && !this.player.lastOnGround) {
+          this.spawnDust();
+        }
+        this.player.lastOnGround = onGround;
+
+        if (onGround) {
+          this.doubleJumpAvailable = true;
+        }
+
+        if (!this.dashing) {
+          if (this.cursors.left.isDown) {
+            this.player.setAccelerationX(-1300);
+            this.player.facing = 'left';
+          } else if (this.cursors.right.isDown) {
+            this.player.setAccelerationX(1300);
+            this.player.facing = 'right';
+          } else {
+            this.player.setAccelerationX(0);
+          }
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+          if (onGround) {
+            this.player.setVelocityY(-560);
+          } else if (this.doubleJumpAvailable && GameState.abilities.doubleJump) {
+            this.player.setVelocityY(-560);
+            this.doubleJumpAvailable = false;
+          }
+        }
+      }
+
+      handleAttack() {
+        const weapon = GameState.weapons[GameState.currentWeapon];
+        if (GameState.weaponCooldown) return;
+
+        if (Phaser.Input.Keyboard.JustDown(this.attackKey)) {
+          GameState.weaponCooldown = true;
+
+// ======================================================
+// CHUNK 2A — GRID-BASED ROOM SYSTEM + ROOM LOADER
+// ======================================================
+
+// -------------------------------------------
+// 1. ROOM DEFINITIONS (2D GRID)
+// -------------------------------------------
+// Each room has:
+// - region: affects visuals, lighting, ambience
+// - platforms: array of {x, y, w}
+// - enemies: array of {x, y, type}
+// - hazards: (added in Chunk 2B)
+// - secrets: (added in Chunk 2B)
+// -------------------------------------------
+
+this.roomGrid = {
+  // Row 0
+  "0,0": {
+    region: "caverns",
+    platforms: [
+      { x: 200, y: 420, w: 200 },
+      { x: 500, y: 360, w: 200 },
+      { x: 800, y: 300, w: 200 }
+    ],
+    enemies: [
+      { x: 600, y: 420, type: "crawler" }
+    ]
+  },
+
+  "0,1": {
+    region: "caverns",
+    platforms: [
+      { x: 300, y: 380, w: 200 },
+      { x: 700, y: 320, w: 200 }
+    ],
+    enemies: [
+      { x: 500, y: 380, type: "crawler" },
+      { x: 900, y: 380, type: "crawler" }
+    ]
+  },
+
+  "0,2": {
+    region: "ruins",
+    platforms: [
+      { x: 200, y: 420, w: 200 },
+      { x: 600, y: 360, w: 200 },
+      { x: 900, y: 300, w: 200 }
+    ],
+    enemies: [
+      { x: 700, y: 360, type: "charger" }
+    ]
+  },
+
+  // Row 1 (vertical rooms)
+  "1,0": {
+    region: "deep_caverns",
+    platforms: [
+      { x: 400, y: 420, w: 200 },
+      { x: 400, y: 300, w: 200 },
+      { x: 400, y: 180, w: 200 }
+    ],
+    enemies: [
+      { x: 450, y: 420, type: "crawler" }
+    ]
+  },
+
+  "1,1": {
+    region: "ruins",
+    platforms: [
+      { x: 200, y: 420, w: 200 },
+      { x: 600, y: 360, w: 200 },
+      { x: 900, y: 260, w: 200 }
+    ],
+    enemies: [
+      { x: 600, y: 360, type: "ranged" }
+    ]
+  },
+
+  "1,2": {
+    region: "forge",
+    platforms: [
+      { x: 300, y: 420, w: 200 },
+      { x: 700, y: 360, w: 200 },
+      { x: 700, y: 260, w: 200 }
+    ],
+    enemies: [
+      { x: 700, y: 360, type: "heavy" }
+    ]
+  }
+};
+
+// -------------------------------------------
+// 2. ROOM STATE
+// -------------------------------------------
+this.currentRoom = { row: 0, col: 0 };
+this.activePlatforms = [];
+this.activeEnemies = [];
+
+// -------------------------------------------
+// 3. CREATE PARALLAX BACKGROUND (REGION-BASED)
+// -------------------------------------------
+this.createParallaxBackground = function(region = "caverns") {
+  if (this.parallaxLayers.length > 0) {
+    this.parallaxLayers.forEach(l => l.obj.destroy());
+    this.parallaxLayers = [];
+  }
+
+  const palettes = {
+    caverns: [0x050518, 0x0a0a30, 0x101030],
+    ruins: [0x1a0f18, 0x2a1a30, 0x3a2030],
+    deep_caverns: [0x000010, 0x050520, 0x080830],
+    forge: [0x301010, 0x502020, 0x703030]
+  };
+
+  const colors = palettes[region] || palettes.caverns;
+
+  const back = this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, colors[0]).setOrigin(0, 0);
+  const mid = this.add.rectangle(0, GAME_HEIGHT * 0.2, GAME_WIDTH, GAME_HEIGHT * 0.8, colors[1]).setOrigin(0, 0);
+  const fore = this.add.rectangle(0, GAME_HEIGHT * 0.5, GAME_WIDTH, GAME_HEIGHT * 0.5, colors[2]).setOrigin(0, 0);
+
+  this.parallaxLayers.push({ obj: back, factor: 0.2 });
+  this.parallaxLayers.push({ obj: mid, factor: 0.4 });
+  this.parallaxLayers.push({ obj: fore, factor: 0.7 });
+};
+
+// -------------------------------------------
+// 4. LOAD ROOM
+// -------------------------------------------
+this.loadRoom = function(row, col) {
+  const key = `${row},${col}`;
+  const room = this.roomGrid[key];
+
+  if (!room) return;
+
+  // Clear old room
+  this.unloadRoom();
+
+  // Update region
+  GameState.region = room.region;
+  document.getElementById("region").textContent = "Region: " + room.region;
+
+  // Update parallax
+  this.createParallaxBackground(room.region);
+
+  // Create platforms
+  room.platforms.forEach(p => {
+    const plat = this.physics.add.staticSprite(p.x, p.y, "platform");
+    plat.setDisplaySize(p.w, 16);
+    plat.refreshBody();
+    this.activePlatforms.push(plat);
+  });
+
+  // Create enemies
+  room.enemies.forEach(e => {
+    const enemy = this.enemies.create(e.x, e.y, "enemy");
+    enemy.setDisplaySize(24, 24);
+    enemy.body.setSize(24, 24);
+    enemy.setCollideWorldBounds(true);
+    enemy.setBounce(1, 0);
+    enemy.setVelocityX(Phaser.Math.Between(-60, -30));
+    enemy.hp = 2;
+    this.activeEnemies.push(enemy);
+  });
+
+  // Add collisions
+  this.activePlatforms.forEach(plat => {
+    this.physics.add.collider(this.player, plat);
+    this.physics.add.collider(this.enemies, plat);
+  });
+
+  // Save current room
+  this.currentRoom = { row, col };
+};
+
+// -------------------------------------------
+// 5. UNLOAD ROOM
+// -------------------------------------------
+this.unloadRoom = function() {
+  this.activePlatforms.forEach(p => p.destroy());
+  this.activeEnemies.forEach(e => e.destroy());
+  this.activePlatforms = [];
+  this.activeEnemies = [];
+};
+
+// -------------------------------------------
+// 6. ROOM TRANSITION CHECK
+// -------------------------------------------
+this.checkRoomTransition = function() {
+  const px = this.player.x;
+  const py = this.player.y;
+
+  // Move right
+  if (px > GAME_WIDTH - 10) {
+    this.player.x = 20;
+    this.loadRoom(this.currentRoom.row, this.currentRoom.col + 1);
+  }
+
+  // Move left
+  if (px < 10) {
+    this.player.x = GAME_WIDTH - 20;
+    this.loadRoom(this.currentRoom.row, this.currentRoom.col - 1);
+  }
+
+  // Move down
+  if (py > GAME_HEIGHT - 10) {
+    this.player.y = 20;
+    this.loadRoom(this.currentRoom.row + 1, this.currentRoom.col);
+  }
+
+  // Move up
+  if (py < 10) {
+    this.player.y = GAME_HEIGHT - 20;
+    this.loadRoom(this.currentRoom.row - 1, this.currentRoom.col);
+  }
+};
+
+// -------------------------------------------
+// 7. UPDATE REGION (NOW ROOM-BASED)
+// -------------------------------------------
+this.updateRegion = function() {
+  // Region is now tied to room
+  document.getElementById("region").textContent =
+    "Region: " + GameState.region;
+};
+
+// -------------------------------------------
+// 8. UPDATE MAP (ROOM VISITED)
+// -------------------------------------------
+this.updateMap = function() {
+  const key = `${this.currentRoom.row},${this.currentRoom.col}`;
+  GameState.map[key] = true;
+};
+
+// -------------------------------------------
+// 9. UPDATE PARALLAX
+// -------------------------------------------
+this.updateParallax = function() {
+  const camX = this.cameras.main.scrollX;
+  this.parallaxLayers.forEach(layer => {
+    layer.obj.x = camX * (1 - layer.factor);
+  });
+};
+
+this.roomGrid = {
+  "0,0": {
+    region: "caverns",
+    platforms: [
+      { x: 200, y: 420, w: 200 },
+      { x: 500, y: 360, w: 200 },
+      { x: 800, y: 300, w: 200 }
+    ],
+    enemies: [
+      { x: 600, y: 420, type: "crawler" }
+    ],
+    hazards: [
+      { kind: "spikes", x: 400, y: 520, w: 200 },
+      { kind: "acid",   x: 750, y: 520, w: 150 }
+    ],
+    breakables: [
+      { x: 900, y: 420, w: 40, h: 80, hp: 3, leadsTo: { row: 1, col: 0 } }
+    ]
+  },
+
+  "1,0": {
+    region: "deep_caverns",
+    platforms: [
+      { x: 400, y: 420, w: 200 },
+      { x: 400, y: 300, w: 200 },
+      { x: 400, y: 180, w: 200 }
+    ],
+    enemies: [
+      { x: 450, y: 420, type: "crawler" }
+    ],
+    hazards: [
+      { kind: "spikes", x: 200, y: 520, w: 200 }
+    ],
+    breakables: []
+  },
+
+  // ...rest of your rooms
+};
+// ======================================================
+// CHUNK 3 — ABILITIES SYSTEM (MOVEMENT + SPELLS)
+// ======================================================
+
+// 1. EXTEND ABILITIES IN GAMESTATE
+GameState.abilities = {
+  doubleJump: true,
+  dash: true,
+  wallJump: false,
+  grapple: false,
+  groundPound: false,
+  airDash: false,
+  glide: false,
+  spellProjectile: false,
+  spellAOE: false,
+  spellShield: false
+};
+
+// 2. ADD NEW INPUT KEYS IN create()
+this.spellKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+this.groundPoundKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+
+// Track air dash usage
+this.airDashUsed = false;
+
+
+// ======================================================
+// 3. UPDATED MOVEMENT SYSTEM
+// ======================================================
+this.handlePlayerMovement = function() {
+  const onGround = this.player.body.blocked.down;
+
+  // Landing dust
+  if (onGround && !this.player.lastOnGround) {
+    this.spawnDust();
+  }
+  this.player.lastOnGround = onGround;
+
+  // Reset double jump + air dash
+  if (onGround) {
+    this.doubleJumpAvailable = true;
+    this.airDashUsed = false;
+  }
+
+  // Horizontal movement
+  if (!this.dashing) {
+    if (this.cursors.left.isDown) {
+      this.player.setAccelerationX(-1300);
+      this.player.facing = 'left';
+    } else if (this.cursors.right.isDown) {
+      this.player.setAccelerationX(1300);
+      this.player.facing = 'right';
+    } else {
+      this.player.setAccelerationX(0);
+    }
+  }
+
+  // Jump / double jump / wall jump
+  if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+    if (onGround) {
+      this.player.setVelocityY(-560);
+    } else if (this.doubleJumpAvailable && GameState.abilities.doubleJump) {
+      this.player.setVelocityY(-560);
+      this.doubleJumpAvailable = false;
+    } else if (GameState.abilities.wallJump) {
+      if (this.player.body.blocked.left) {
+        this.player.setVelocity(350, -560);
+      } else if (this.player.body.blocked.right) {
+        this.player.setVelocity(-350, -560);
+      }
+    }
+  }
+
+  // Glide (hold jump while falling)
+  if (
+    GameState.abilities.glide &&
+    !onGround &&
+    this.cursors.up.isDown &&
+    this.player.body.velocity.y > 0
+  ) {
+    this.player.setVelocityY(Math.min(this.player.body.velocity.y, 120));
+  }
+
+  // Ground pound
+  if (
+    GameState.abilities.groundPound &&
+    Phaser.Input.Keyboard.JustDown(this.groundPoundKey) &&
+    !onGround &&
+    this.player.body.velocity.y > 0
+  ) {
+    this.player.setVelocityY(900);
+    this.player.isGroundPounding = true;
+  }
+
+  // Ground pound impact
+  if (onGround && this.player.isGroundPounding) {
+    this.player.isGroundPounding = false;
+    this.cameras.main.shake(150, 0.02);
+    this.hitPause(80);
+    // TODO: break fragile floors / damage enemies
+  }
+};
+
+
+// ======================================================
+// 4. UPDATED DASH SYSTEM (GROUND + AIR DASH)
+// ======================================================
+this.handleDash = function() {
+  if (!GameState.abilities.dash) return;
+
+  if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
+    const onGround = this.player.body.blocked.down;
+
+    if (this.dashCooldown) return;
+    if (!onGround && GameState.abilities.airDash && this.airDashUsed) return;
+
+    this.dashing = true;
+    this.dashCooldown = true;
+
+    const dir = this.player.facing === 'right' ? 1 : -1;
+    this.player.setVelocityX(900 * dir);
+    this.player.setAccelerationX(0);
+
+    if (!onGround && GameState.abilities.airDash) {
+      this.airDashUsed = true;
+    }
+
+    this.time.delayedCall(180, () => {
+      this.dashing = false;
+    });
+
+    this.time.delayedCall(600, () => {
+      this.dashCooldown = false;
+    });
+  }
+};
+
+
+// ======================================================
+// 5. SPELL SYSTEM
+// ======================================================
+this.handleSpells = function() {
+  if (!Phaser.Input.Keyboard.JustDown(this.spellKey)) return;
+  if (GameState.soul < 10) return;
+
+  if (GameState.abilities.spellProjectile) {
+    this.castProjectileSpell();
+  } else if (GameState.abilities.spellAOE) {
+    this.castAOESpell();
+  } else if (GameState.abilities.spellShield) {
+    this.castShieldSpell();
+  }
+};
+
+
+// ======================================================
+// 6. SPELL: PROJECTILE
+// ======================================================
+this.castProjectileSpell = function() {
+  GameState.soul -= 10;
+  this.updateHUD();
+
+  const dir = this.player.facing === 'right' ? 1 : -1;
+  const proj = this.physics.add.sprite(this.player.x, this.player.y, 'projectile');
+  proj.setDisplaySize(12, 4);
+  proj.body.setAllowGravity(false);
+  proj.setVelocityX(700 * dir);
+  proj.weaponDamage = 2;
+
+  this.physics.add.overlap(proj, this.enemies, (p, enemy) => {
+    if (!enemy.active) return;
+    enemy.hp -= p.weaponDamage;
+    p.destroy();
+    if (enemy.hp <= 0) {
+      enemy.disableBody(true, true);
+      GameState.soul += 5;
+      this.updateHUD();
+    }
+  });
+};
+
+
+// ======================================================
+// 7. SPELL: AOE BLAST
+// ======================================================
+this.castAOESpell = function() {
+  GameState.soul -= 20;
+  this.updateHUD();
+
+  this.cameras.main.shake(200, 0.02);
+  this.hitPause(100);
+
+  this.enemies.children.iterate(enemy => {
+    if (!enemy || !enemy.active) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+    if (d < 200) {
+      enemy.hp -= 3;
+      if (enemy.hp <= 0) {
+        enemy.disableBody(true, true);
+        GameState.soul += 5;
+        this.updateHUD();
+      }
+    }
+  });
+};
+
+
+// ======================================================
+// 8. SPELL: SHIELD
+// ======================================================
+this.castShieldSpell = function() {
+  GameState.soul -= 15;
+  this.updateHUD();
+
+  this.canTakeDamage = false;
+  this.player.setTint(0x88ccff);
+
+  this.time.delayedCall(1500, () => {
+    this.canTakeDamage = true;
+    this.player.clearTint();
+  });
+};
+
+
+// ======================================================
+// 9. ADD SPELL HANDLER TO update()
+// ======================================================
+const originalUpdate = this.update;
+this.update = function(time, delta) {
+  originalUpdate.call(this, time, delta);
+  this.handleSpells();
+};
+// ======================================================
+// CHUNK 3 — ABILITIES SYSTEM (MOVEMENT + SPELLS)
+// ======================================================
+
+// 1. EXTEND ABILITIES IN GAMESTATE
+GameState.abilities = {
+  doubleJump: true,
+  dash: true,
+  wallJump: false,
+  grapple: false,
+  groundPound: false,
+  airDash: false,
+  glide: false,
+  spellProjectile: false,
+  spellAOE: false,
+  spellShield: false
+};
+
+// 2. ADD NEW INPUT KEYS IN create()
+this.spellKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+this.groundPoundKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+
+// Track air dash usage
+this.airDashUsed = false;
+
+
+// ======================================================
+// 3. UPDATED MOVEMENT SYSTEM
+// ======================================================
+this.handlePlayerMovement = function() {
+  const onGround = this.player.body.blocked.down;
+
+  // Landing dust
+  if (onGround && !this.player.lastOnGround) {
+    this.spawnDust();
+  }
+  this.player.lastOnGround = onGround;
+
+  // Reset double jump + air dash
+  if (onGround) {
+    this.doubleJumpAvailable = true;
+    this.airDashUsed = false;
+  }
+
+  // Horizontal movement
+  if (!this.dashing) {
+    if (this.cursors.left.isDown) {
+      this.player.setAccelerationX(-1300);
+      this.player.facing = 'left';
+    } else if (this.cursors.right.isDown) {
+      this.player.setAccelerationX(1300);
+      this.player.facing = 'right';
+    } else {
+      this.player.setAccelerationX(0);
+    }
+  }
+
+  // Jump / double jump / wall jump
+  if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+    if (onGround) {
+      this.player.setVelocityY(-560);
+    } else if (this.doubleJumpAvailable && GameState.abilities.doubleJump) {
+      this.player.setVelocityY(-560);
+      this.doubleJumpAvailable = false;
+    } else if (GameState.abilities.wallJump) {
+      if (this.player.body.blocked.left) {
+        this.player.setVelocity(350, -560);
+      } else if (this.player.body.blocked.right) {
+        this.player.setVelocity(-350, -560);
+      }
+    }
+  }
+
+  // Glide (hold jump while falling)
+  if (
+    GameState.abilities.glide &&
+    !onGround &&
+    this.cursors.up.isDown &&
+    this.player.body.velocity.y > 0
+  ) {
+    this.player.setVelocityY(Math.min(this.player.body.velocity.y, 120));
+  }
+
+  // Ground pound
+  if (
+    GameState.abilities.groundPound &&
+    Phaser.Input.Keyboard.JustDown(this.groundPoundKey) &&
+    !onGround &&
+    this.player.body.velocity.y > 0
+  ) {
+    this.player.setVelocityY(900);
+    this.player.isGroundPounding = true;
+  }
+
+  // Ground pound impact
+  if (onGround && this.player.isGroundPounding) {
+    this.player.isGroundPounding = false;
+    this.cameras.main.shake(150, 0.02);
+    this.hitPause(80);
+    // TODO: break fragile floors / damage enemies
+  }
+};
+
+
+// ======================================================
+// 4. UPDATED DASH SYSTEM (GROUND + AIR DASH)
+// ======================================================
+this.handleDash = function() {
+  if (!GameState.abilities.dash) return;
+
+  if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
+    const onGround = this.player.body.blocked.down;
+
+    if (this.dashCooldown) return;
+    if (!onGround && GameState.abilities.airDash && this.airDashUsed) return;
+
+    this.dashing = true;
+    this.dashCooldown = true;
+
+    const dir = this.player.facing === 'right' ? 1 : -1;
+    this.player.setVelocityX(900 * dir);
+    this.player.setAccelerationX(0);
+
+    if (!onGround && GameState.abilities.airDash) {
+      this.airDashUsed = true;
+    }
+
+    this.time.delayedCall(180, () => {
+      this.dashing = false;
+    });
+
+    this.time.delayedCall(600, () => {
+      this.dashCooldown = false;
+    });
+  }
+};
+
+
+// ======================================================
+// 5. SPELL SYSTEM
+// ======================================================
+this.handleSpells = function() {
+  if (!Phaser.Input.Keyboard.JustDown(this.spellKey)) return;
+  if (GameState.soul < 10) return;
+
+  if (GameState.abilities.spellProjectile) {
+    this.castProjectileSpell();
+  } else if (GameState.abilities.spellAOE) {
+    this.castAOESpell();
+  } else if (GameState.abilities.spellShield) {
+    this.castShieldSpell();
+  }
+};
+
+
+// ======================================================
+// 6. SPELL: PROJECTILE
+// ======================================================
+this.castProjectileSpell = function() {
+  GameState.soul -= 10;
+  this.updateHUD();
+
+  const dir = this.player.facing === 'right' ? 1 : -1;
+  const proj = this.physics.add.sprite(this.player.x, this.player.y, 'projectile');
+  proj.setDisplaySize(12, 4);
+  proj.body.setAllowGravity(false);
+  proj.setVelocityX(700 * dir);
+  proj.weaponDamage = 2;
+
+  this.physics.add.overlap(proj, this.enemies, (p, enemy) => {
+    if (!enemy.active) return;
+    enemy.hp -= p.weaponDamage;
+    p.destroy();
+    if (enemy.hp <= 0) {
+      enemy.disableBody(true, true);
+      GameState.soul += 5;
+      this.updateHUD();
+    }
+  });
+};
+
+
+// ======================================================
+// 7. SPELL: AOE BLAST
+// ======================================================
+this.castAOESpell = function() {
+  GameState.soul -= 20;
+  this.updateHUD();
+
+  this.cameras.main.shake(200, 0.02);
+  this.hitPause(100);
+
+  this.enemies.children.iterate(enemy => {
+    if (!enemy || !enemy.active) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+    if (d < 200) {
+      enemy.hp -= 3;
+      if (enemy.hp <= 0) {
+        enemy.disableBody(true, true);
+        GameState.soul += 5;
+        this.updateHUD();
+      }
+    }
+  });
+};
+
+
+// ======================================================
+// 8. SPELL: SHIELD
+// ======================================================
+this.castShieldSpell = function() {
+  GameState.soul -= 15;
+  this.updateHUD();
+
+  this.canTakeDamage = false;
+  this.player.setTint(0x88ccff);
+
+  this.time.delayedCall(1500, () => {
+    this.canTakeDamage = true;
+    this.player.clearTint();
+  });
+};
+
+
+// ======================================================
+// 9. ADD SPELL HANDLER TO update()
+// ======================================================
+const originalUpdate = this.update;
+this.update = function(time, delta) {
+  originalUpdate.call(this, time, delta);
+  this.handleSpells();
+};
+// ======================================================
+// CHUNK 3 — ABILITIES SYSTEM (MOVEMENT + SPELLS)
+// ======================================================
+
+// 1. EXTEND ABILITIES IN GAMESTATE
+GameState.abilities = {
+  doubleJump: true,
+  dash: true,
+  wallJump: false,
+  grapple: false,
+  groundPound: false,
+  airDash: false,
+  glide: false,
+  spellProjectile: false,
+  spellAOE: false,
+  spellShield: false
+};
+
+// 2. ADD NEW INPUT KEYS IN create()
+this.spellKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+this.groundPoundKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+
+// Track air dash usage
+this.airDashUsed = false;
+
+
+// ======================================================
+// 3. UPDATED MOVEMENT SYSTEM
+// ======================================================
+this.handlePlayerMovement = function() {
+  const onGround = this.player.body.blocked.down;
+
+  // Landing dust
+  if (onGround && !this.player.lastOnGround) {
+    this.spawnDust();
+  }
+  this.player.lastOnGround = onGround;
+
+  // Reset double jump + air dash
+  if (onGround) {
+    this.doubleJumpAvailable = true;
+    this.airDashUsed = false;
+  }
+
+  // Horizontal movement
+  if (!this.dashing) {
+    if (this.cursors.left.isDown) {
+      this.player.setAccelerationX(-1300);
+      this.player.facing = 'left';
+    } else if (this.cursors.right.isDown) {
+      this.player.setAccelerationX(1300);
+      this.player.facing = 'right';
+    } else {
+      this.player.setAccelerationX(0);
+    }
+  }
+
+  // Jump / double jump / wall jump
+  if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+    if (onGround) {
+      this.player.setVelocityY(-560);
+    } else if (this.doubleJumpAvailable && GameState.abilities.doubleJump) {
+      this.player.setVelocityY(-560);
+      this.doubleJumpAvailable = false;
+    } else if (GameState.abilities.wallJump) {
+      if (this.player.body.blocked.left) {
+        this.player.setVelocity(350, -560);
+      } else if (this.player.body.blocked.right) {
+        this.player.setVelocity(-350, -560);
+      }
+    }
+  }
+
+  // Glide (hold jump while falling)
+  if (
+    GameState.abilities.glide &&
+    !onGround &&
+    this.cursors.up.isDown &&
+    this.player.body.velocity.y > 0
+  ) {
+    this.player.setVelocityY(Math.min(this.player.body.velocity.y, 120));
+  }
+
+  // Ground pound
+  if (
+    GameState.abilities.groundPound &&
+    Phaser.Input.Keyboard.JustDown(this.groundPoundKey) &&
+    !onGround &&
+    this.player.body.velocity.y > 0
+  ) {
+    this.player.setVelocityY(900);
+    this.player.isGroundPounding = true;
+  }
+
+  // Ground pound impact
+  if (onGround && this.player.isGroundPounding) {
+    this.player.isGroundPounding = false;
+    this.cameras.main.shake(150, 0.02);
+    this.hitPause(80);
+    // TODO: break fragile floors / damage enemies
+  }
+};
+
+
+// ======================================================
+// 4. UPDATED DASH SYSTEM (GROUND + AIR DASH)
+// ======================================================
+this.handleDash = function() {
+  if (!GameState.abilities.dash) return;
+
+  if (Phaser.Input.Keyboard.JustDown(this.dashKey)) {
+    const onGround = this.player.body.blocked.down;
+
+    if (this.dashCooldown) return;
+    if (!onGround && GameState.abilities.airDash && this.airDashUsed) return;
+
+    this.dashing = true;
+    this.dashCooldown = true;
+
+    const dir = this.player.facing === 'right' ? 1 : -1;
+    this.player.setVelocityX(900 * dir);
+    this.player.setAccelerationX(0);
+
+    if (!onGround && GameState.abilities.airDash) {
+      this.airDashUsed = true;
+    }
+
+    this.time.delayedCall(180, () => {
+      this.dashing = false;
+    });
+
+    this.time.delayedCall(600, () => {
+      this.dashCooldown = false;
+    });
+  }
+};
+
+
+// ======================================================
+// 5. SPELL SYSTEM
+// ======================================================
+this.handleSpells = function() {
+  if (!Phaser.Input.Keyboard.JustDown(this.spellKey)) return;
+  if (GameState.soul < 10) return;
+
+  if (GameState.abilities.spellProjectile) {
+    this.castProjectileSpell();
+  } else if (GameState.abilities.spellAOE) {
+    this.castAOESpell();
+  } else if (GameState.abilities.spellShield) {
+    this.castShieldSpell();
+  }
+};
+
+
+// ======================================================
+// 6. SPELL: PROJECTILE
+// ======================================================
+this.castProjectileSpell = function() {
+  GameState.soul -= 10;
+  this.updateHUD();
+
+  const dir = this.player.facing === 'right' ? 1 : -1;
+  const proj = this.physics.add.sprite(this.player.x, this.player.y, 'projectile');
+  proj.setDisplaySize(12, 4);
+  proj.body.setAllowGravity(false);
+  proj.setVelocityX(700 * dir);
+  proj.weaponDamage = 2;
+
+  this.physics.add.overlap(proj, this.enemies, (p, enemy) => {
+    if (!enemy.active) return;
+    enemy.hp -= p.weaponDamage;
+    p.destroy();
+    if (enemy.hp <= 0) {
+      enemy.disableBody(true, true);
+      GameState.soul += 5;
+      this.updateHUD();
+    }
+  });
+};
+
+
+// ======================================================
+// 7. SPELL: AOE BLAST
+// ======================================================
+this.castAOESpell = function() {
+  GameState.soul -= 20;
+  this.updateHUD();
+
+  this.cameras.main.shake(200, 0.02);
+  this.hitPause(100);
+
+  this.enemies.children.iterate(enemy => {
+    if (!enemy || !enemy.active) return;
+    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+    if (d < 200) {
+      enemy.hp -= 3;
+      if (enemy.hp <= 0) {
+        enemy.disableBody(true, true);
+        GameState.soul += 5;
+        this.updateHUD();
+      }
+    }
+  });
+};
+
+
+// ======================================================
+// 8. SPELL: SHIELD
+// ======================================================
+this.castShieldSpell = function() {
+  GameState.soul -= 15;
+  this.updateHUD();
+
+  this.canTakeDamage = false;
+  this.player.setTint(0x88ccff);
+
+  this.time.delayedCall(1500, () => {
+    this.canTakeDamage = true;
+    this.player.clearTint();
+  });
+};
+
+
+// ======================================================
+// 9. ADD SPELL HANDLER TO update()
+// ======================================================
+const originalUpdate = this.update;
+this.update = function(time, delta) {
+  originalUpdate.call(this, time, delta);
+  this.handleSpells();
+};
+
+// ======================================================
+// CHUNK 4 — COMBAT EXPANSION (WEAPONS, PARRY, ENEMY AI)
+// Paste this inside your <script>, adapting where needed
+// ======================================================
+
+// 1) EXTEND GAMESTATE (put this where GameState is defined)
+GameState.weapons = {
+  nail: {
+    name: "Nail",
+    dmg: 1,
+    range: 40,
+    cooldown: 150,
+    type: "physical",
+    knockback: 1
+  },
+  greatblade: {
+    name: "Greatblade",
+    dmg: 3,
+    range: 60,
+    cooldown: 380,
+    type: "physical",
+    knockback: 2
+  },
+  soulSpear: {
+    name: "Soul Spear",
+    dmg: 2,
+    range: 140,
+    cooldown: 260,
+    type: "soul",
+    projectile: true
+  }
+};
+GameState.currentWeapon = "nail";
+
+// 2) IN GAMESCENE CONSTRUCTOR, ADD:
+this.parryKey = null;
+this.isParrying = false;
+this.parryWindow = 120;
+this.parryTimer = 0;
+
+// 3) IN GameScene.create(), AFTER OTHER KEYS:
+this.parryKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+
+// 4) ENEMY RESISTANCE + STATE (CALL THIS WHEN CREATING ENEMIES)
+this.initEnemy = function(enemy, type = "crawler") {
+  enemy.enemyType = type;
+  enemy.state = "patrol";
+  enemy.stateTimer = 0;
+  enemy.hp = 3;
+
+  if (type === "crawler") {
+    enemy.speed = 60;
+    enemy.resist = { physical: 1.0, soul: 1.0 };
+  } else if (type === "charger") {
+    enemy.speed = 120;
+    enemy.resist = { physical: 0.8, soul: 1.2 };
+  } else if (type === "ranged") {
+    enemy.speed = 40;
+    enemy.resist = { physical: 1.0, soul: 0.7 };
+  } else {
+    enemy.speed = 60;
+    enemy.resist = { physical: 1.0, soul: 1.0 };
+  }
+};
+
+// Example usage inside loadRoom when creating enemies:
+/// const enemy = this.enemies.create(e.x, e.y, "enemy");
+/// this.initEnemy(enemy, e.type || "crawler");
+
+// 5) OVERRIDE / REPLACE YOUR performMeleeAttack WITH:
+this.performMeleeAttack = function(weapon) {
+  // If weapon is projectile-based, fire projectile instead
+  if (weapon.projectile) {
+    this.castWeaponProjectile(weapon);
+    return;
+  }
+
+  this.attackActive = true;
+
+  const offsetX = this.player.facing === "right" ? weapon.range : -weapon.range;
+  this.attackHitbox.setPosition(this.player.x + offsetX, this.player.y);
+  this.attackHitbox.setVisible(true);
+  this.attackHitbox.weaponDamage = weapon.dmg;
+  this.attackHitbox.weaponType = weapon.type;
+  this.attackHitbox.knockback = weapon.knockback || 1;
+
+  this.spawnSlash(offsetX);
+
+  this.time.delayedCall(120, () => {
+    this.attackHitbox.setVisible(false);
+    this.attackActive = false;
+  });
+};
+
+// 6) WEAPON PROJECTILE (USED BY soulSpear)
+this.castWeaponProjectile = function(weapon) {
+  const dir = this.player.facing === "right" ? 1 : -1;
+  const proj = this.physics.add.sprite(this.player.x, this.player.y, "projectile");
+  proj.setDisplaySize(12, 4);
+  proj.body.setAllowGravity(false);
+  proj.setVelocityX(700 * dir);
+  proj.weaponDamage = weapon.dmg;
+  proj.weaponType = weapon.type;
+
+  this.physics.add.overlap(proj, this.enemies, (p, enemy) => {
+    if (!enemy.active) return;
+    this.applyDamageToEnemy(enemy, p.weaponDamage, p.weaponType);
+    p.destroy();
+  });
+};
+
+// 7) DAMAGE APPLICATION WITH RESISTANCE
+this.applyDamageToEnemy = function(enemy, baseDamage, type) {
+  const resist = enemy.resist && enemy.resist[type] != null ? enemy.resist[type] : 1.0;
+  const finalDamage = Math.max(1, Math.round(baseDamage * resist));
+  enemy.hp -= finalDamage;
+
+  this.hitPause(60);
+  this.cameras.main.shake(80, 0.005);
+
+  if (enemy.hp <= 0) {
+    enemy.disableBody(true, true);
+    GameState.soul += 5;
+    this.updateHUD();
+  }
+};
+
+// 8) OVERRIDE onAttackHitEnemy TO USE applyDamageToEnemy
+this.onAttackHitEnemy = function(hitbox, enemy) {
+  if (!this.attackActive || !enemy.active) return;
+  const dmg = hitbox.weaponDamage || 1;
+  const type = hitbox.weaponType || "physical";
+  this.applyDamageToEnemy(enemy, dmg, type);
+
+  // Knockback
+  const dir = this.player.x < enemy.x ? 1 : -1;
+  enemy.setVelocityX(200 * dir * (hitbox.knockback || 1));
+};
+
+// 9) PARRY INPUT + WINDOW (CALL IN update())
+this.handleParry = function(time, delta) {
+  if (Phaser.Input.Keyboard.JustDown(this.parryKey)) {
+    this.isParrying = true;
+    this.parryTimer = this.parryWindow;
+    this.player.setTint(0xddddff);
+  }
+
+  if (this.isParrying) {
+    this.parryTimer -= delta;
+    if (this.parryTimer <= 0) {
+      this.isParrying = false;
+      this.player.clearTint();
+    }
+  }
+};
+
+// 10) MODIFY onPlayerEnemyOverlap TO SUPPORT PARRY
+this.onPlayerEnemyOverlap = function(player, enemy) {
+  if (!enemy.active) return;
+
+  // If parrying and enemy is attacking → parry success
+  if (this.isParrying && enemy.state === "attack") {
+    this.handleParrySuccess(enemy);
+    return;
+  }
+
+  if (!this.canTakeDamage) return;
+  this.damagePlayer(enemy);
+};
+
+// 11) PARRY SUCCESS
+this.handleParrySuccess = function(enemy) {
+  this.isParrying = false;
+  this.player.clearTint();
+
+  enemy.state = "stunned";
+  enemy.stateTimer = 1000;
+
+  GameState.soul += 10;
+  this.updateHUD();
+
+  this.hitPause(120);
+  this.cameras.main.shake(200, 0.02);
+};
+
+// 12) ENEMY AI UPDATE (CALL IN update())
+this.updateEnemies = function(time, delta) {
+  this.enemies.children.iterate(enemy => {
+    if (!enemy || !enemy.active) return;
+
+    enemy.stateTimer -= delta;
+
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+
+    switch (enemy.state) {
+      case "patrol":
+        if (!enemy.body.blocked.left && !enemy.body.blocked.right && enemy.body.velocity.x === 0) {
+          enemy.setVelocityX(enemy.speed);
+        }
+        if (enemy.body.blocked.left) enemy.setVelocityX(enemy.speed);
+        if (enemy.body.blocked.right) enemy.setVelocityX(-enemy.speed);
+
+        if (dist < 220) {
+          enemy.state = "chase";
+          enemy.stateTimer = 500;
+        }
+        break;
+
+      case "chase":
+        if (this.player.x < enemy.x) {
+          enemy.setVelocityX(-enemy.speed);
+        } else {
+          enemy.setVelocityX(enemy.speed);
+        }
+
+        if (dist < 60) {
+          enemy.state
+
+// ======================================================
+// CHUNK 5 — NPCs, DIALOGUE, SHOPS, TOWN HUB
+// ======================================================
+
+// -----------------------------
+// 1. EXTEND GAMESTATE
+// -----------------------------
+GameState.geo = 0;
+GameState.npcFlags = {};
+GameState.npcs = {
+  elder: {
+    id: "elder",
+    name: "The Elder",
+    room: { row: 0, col: 0 },
+    behavior: "idle",
+    dialogue: {
+      intro: [
+        "Ah… a traveler wandering these forgotten halls.",
+        "The caverns whisper of old wounds."
+      ],
+      afterLantern: [
+        "You carry the Lantern now.",
+        "Light reveals what stone tried to bury."
+      ]
+    },
+    conditions: {
+      afterLantern: () => GameState.inventory?.lantern
+    }
+  },
+
+  merchant: {
+    id: "merchant",
+    name: "Wandering Merchant",
+    room: { row: 0, col: 1 },
+    behavior: "pace",
+    dialogue: {
+      intro: [
+        "Psst… traveler.",
+        "Care to browse my wares?",
+        "[SHOP]"
+      ]
+    },
+    shop: {
+      items: [
+        { id: "map_fragment", label: "Map Fragment", price: 50 },
+        { id: "charm_slot", label: "Charm Notch", price: 120 },
+        { id: "soul_shard", label: "Soul Shard", price: 80 }
+      ]
+    }
+  }
+};
+
+
+// -----------------------------
+// 2. ADD TO GameScene CONSTRUCTOR
+// -----------------------------
+this.npcGroup = null;
+this.currentNPC = null;
+this.dialogueActive = false;
+this.dialogueLines = [];
+this.dialogueIndex = 0;
+this.interactKey = null;
+this.dialogueBox = null;
+this.dialogueName = null;
+this.dialogueText = null;
+this.shopActive = false;
+this.shopIndex = 0;
+
+
+// -----------------------------
+// 3. IN GameScene.create()
+// -----------------------------
+this.interactKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+this.npcGroup = this.physics.add.staticGroup();
+this.createDialogueUI();
+
+
+// -----------------------------
+// 4. DIALOGUE UI
+// -----------------------------
+this.createDialogueUI = function() {
+  const { width, height } = this.scale;
+
+  const bg = this.add.rectangle(width / 2, height - 80, width - 80, 120, 0x050510, 0.9)
+    .setStrokeStyle(2, 0x8888ff)
+    .setScrollFactor(0)
+    .setDepth(100)
+    .setVisible(false);
+
+  const nameText = this.add.text(60, height - 130, "", {
+    fontFamily: "sans-serif",
+    fontSize: "16px",
+    color: "#ccccff"
+  }).setScrollFactor(0).setDepth(101).setVisible(false);
+
+  const bodyText = this.add.text(60, height - 110, "", {
+    fontFamily: "sans-serif",
+    fontSize: "14px",
+    color: "#f0f0ff",
+    wordWrap: { width: width - 140 }
+  }).setScrollFactor(0).setDepth(101).setVisible(false);
+
+  this.dialogueBox = bg;
+  this.dialogueName = nameText;
+  this.dialogueText = bodyText;
+};
+
+
+// -----------------------------
+// 5. SPAWN NPCs WHEN ROOM LOADS
+// -----------------------------
+this.spawnNPCsForRoom = function(row, col) {
+  this.npcGroup.clear(true, true);
+
+  Object.values(GameState.npcs).forEach(npcData => {
+    if (npcData.room.row === row && npcData.room.col === col) {
+      const npc = this.npcGroup.create(200, 400, "player"); // placeholder sprite
+      npc.setDisplaySize(20, 30);
+      npc.body.setSize(20, 30);
+      npc.npcId = npcData.id;
+      npc.npcData = npcData;
+
+      if (npcData.behavior === "pace") {
+        npc.paceLeft = npc.x - 60;
+        npc.paceRight = npc.x + 60;
+        npc.setVelocityX(30);
+      }
+    }
+  });
+
+  this.physics.add.overlap(this.player, this.npcGroup, this.onPlayerNearNPC, null, this);
+};
+
+
+// -----------------------------
+// 6. CALL THIS INSIDE loadRoom()
+// -----------------------------
+// After enemies/hazards:
+// this.spawnNPCsForRoom(row, col);
+
+
+// -----------------------------
+// 7. PLAYER NEAR NPC
+// -----------------------------
+this.onPlayerNearNPC = function(player, npc) {
+  this.currentNPC = npc;
+  this.showStatus("Press SPACE to talk");
+};
+
+
+// -----------------------------
+// 8. GET DIALOGUE LINES
+// -----------------------------
+this.getDialogueForNPC = function(npcData) {
+  if (!npcData.dialogue) return ["..."];
+
+  if (npcData.conditions) {
+    for (const key in npcData.conditions) {
+      if (npcData.conditions[key]()) {
+        return npcData.dialogue[key];
+      }
+    }
+  }
+
+  return npcData.dialogue.intro || ["..."];
+};
+
+
+// -----------------------------
+// 9. START DIALOGUE
+// -----------------------------
+this.startDialogue = function(npcSprite) {
+  const data = npcSprite.npcData;
+  const lines = this.getDialogueForNPC(data);
+
+  this.dialogueActive = true;
+  this.shopActive = false;
+  this.dialogueLines = lines.slice();
+  this.dialogueIndex = 0;
+
+  this.player.setVelocity(0, 0);
+  this.player.body.enable = false;
+
+  this.dialogueBox.setVisible(true);
+  this.dialogueName.setVisible(true);
+  this.dialogueText.setVisible(true);
+
+  this.dialogueName.setText(data.name || "???");
+  this.advanceDialogue();
+};
+
+
+// -----------------------------
+// 10. ADVANCE DIALOGUE
+// -----------------------------
+this.advanceDialogue = function() {
+  if (!this.dialogueActive) return;
+
+  if (this.shopActive) {
+    this.advanceShop();
+    return;
+  }
+
+  if (this.dialogueIndex >= this.dialogueLines.length) {
+    this.endDialogue();
+    return;
+  }
+
+  const line = this.dialogueLines[this.dialogueIndex++];
+
+  if (line.trim() === "[SHOP]" && this.currentNPC.npcData.shop) {
+    this.startShop(this.currentNPC.npcData.shop);
+    return;
+  }
+
+  this.dialogueText.setText(line);
+};
+
+
+// -----------------------------
+// 11. END DIALOGUE
+// -----------------------------
+this.endDialogue = function() {
+  this.dialogueActive = false;
+  this.shopActive = false;
+
+  this.dialogueBox.setVisible(false);
+  this.dialogueName.setVisible(false);
+  this.dialogueText.setVisible(false);
+
+  this.player.body.enable = true;
+};
+
+
+// -----------------------------
+// 12. SHOP SYSTEM
+// -----------------------------
+this.startShop = function(shopData) {
+  this.shopActive = true;
+  this.shopIndex = 0;
+  this.currentShop = shopData;
+  this.renderShop();
+};
+
+this.renderShop = function() {
+  const items = this.currentShop.items || [];
+  if (items.length === 0) {
+    this.dialogueText.setText("Nothing left to sell.");
+    return;
+  }
+
+  let text = "Goods for sale:\n\n";
+  items.forEach((item, idx) => {
+    const marker = idx === this.shopIndex ? ">" : " ";
+    text += `${marker} ${item.label} - ${item.price} GEO\n`;
+  });
+  text += `\nGEO: ${GameState.geo}`;
+
+  this.dialogueText.setText(text);
+};
+
+this.advanceShop = function() {
+  const items = this.currentShop.items || [];
+  if (items.length === 0) {
+    this.shopActive = false;
+    this.advanceDialogue();
+    return;
+  }
+
+  const selected = items[this.shopIndex];
+  if (!selected) return;
+
+  if (GameState.geo >= selected.price) {
+    GameState.geo -= selected.price;
+    GameState.inventory = GameState.inventory || {};
+    GameState.inventory[selected.id] = true;
+    this.updateHUD();
+
+    this.dialogueText.setText(`You obtained: ${selected.label}\n\nGEO left: ${GameState.geo}`);
+
+    this.currentShop.items.splice(this.shopIndex, 1);
+    this.shopIndex = 0;
+  } else {
+    this.dialogueText.setText("You don't have enough GEO.");
+  }
+};
+
+
+// -----------------------------
+// 13. HANDLE INTERACTION
+// -----------------------------
+this.handleNPCInteraction = function() {
+  if (Phaser.Input.Keyboard.JustDown(this.interactKey)) {
+    if (this.dialogueActive) {
+      this.advanceDialogue();
+      return;
+    }
+
+    if (this.currentNPC && !this.dialogueActive) {
+      this.startDialogue(this.currentNPC);
+    }
+  }
+};
+
+
+// -----------------------------
+// 14. CALL IN update()
+// -----------------------------
+const oldUpdateNPC = this.update;
+this.update = function(time, delta) {
+  oldUpdateNPC.call(this, time, delta);
+  this.handleNPCInteraction();
+};
+
+// ======================================================
+// CHUNK 6 — QUEST SYSTEM (MULTI-STAGE, LOG, TRIGGERS, REWARDS)
+// ======================================================
+
+// -----------------------------
+// 1. EXTEND GAMESTATE
+// -----------------------------
+GameState.quests = {
+  lanternQuest: {
+    id: "lanternQuest",
+    name: "Light in the Deep",
+    state: "not_started", // not_started | active | completed
+    stage: 0,
+    description: "The Elder spoke of a lantern lost in the deep caverns.",
+    log: []
+  },
+  forgeKeyQuest: {
+    id: "forgeKeyQuest",
+    name: "Key to the Forge",
+    state: "not_started",
+    stage: 0,
+    description: "A sealed door in the ruins needs a key from the forge.",
+    log: []
+  }
+};
+
+// -----------------------------
+// 2. ADD TO GameScene CONSTRUCTOR
+// -----------------------------
+this.questLogVisible = false;
+this.questKey = null;
+this.questBox = null;
+this.questText = null;
+
+// -----------------------------
+// 3. IN GameScene.create()
+// -----------------------------
+this.questKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+this.createQuestLogUI();
+
+// -----------------------------
+// 4. QUEST LOG UI
+// -----------------------------
+this.createQuestLogUI = function() {
+  const { width, height } = this.scale;
+
+  const box = this.add.rectangle(width - 200, height / 2, 260, 260, 0x050510, 0.9)
+    .setStrokeStyle(2, 0x88ff88)
+    .setScrollFactor(0)
+    .setDepth(120)
+    .setVisible(false);
+
+  const text = this.add.text(width - 320, height / 2 - 110, "", {
+    fontFamily: "sans-serif",
+    fontSize: "13px",
+    color: "#e0ffe0",
+    wordWrap: { width: 240 }
+  }).setScrollFactor(0).setDepth(121).setVisible(false);
+
+  this.questBox = box;
+  this.questText = text;
+};
+
+// -----------------------------
+// 5. TOGGLE QUEST LOG
+// -----------------------------
+this.toggleQuestLog = function() {
+  this.questLogVisible = !this.questLogVisible;
+  this.questBox.setVisible(this.questLogVisible);
+  this.questText.setVisible(this.questLogVisible);
+
+  if (this.questLogVisible) {
+    this.renderQuestLog();
+  }
+};
+
+this.renderQuestLog = function() {
+  const activeQuests = Object.values(GameState.quests).filter(q => q.state === "active" || q.state === "completed");
+  if (activeQuests.length === 0) {
+    this.questText.setText("No quests yet.\n\nSpeak with those who still remember.");
+    return;
+  }
+
+  let text = "QUEST LOG\n\n";
+  activeQuests.forEach(q => {
+    text += `${q.name} [${q.state === "completed" ? "DONE" : "ACTIVE"}]\n`;
+    text += `${q.description}\n`;
+    if (q.log.length > 0) {
+      text += "- " + q.log[q.log.length - 1] + "\n";
+    }
+    text += "\n";
+  });
+
+  this.questText.setText(text);
+};
+
+// -----------------------------
+// 6. QUEST HELPERS
+// -----------------------------
+this.startQuest = function(id, note) {
+  const q = GameState.quests[id];
+  if (!q || q.state !== "not_started") return;
+  q.state = "active";
+  q.stage = 1;
+  if (note) q.log.push(note);
+  this.showStatus(`Quest started: ${q.name}`);
+};
+
+this.advanceQuest = function(id, note) {
+  const q = GameState.quests[id];
+  if (!q || q.state !== "active") return;
+  q.stage += 1;
+  if (note) q.log.push(note);
+  this.showStatus(`Quest updated: ${q.name}`);
+};
+
+this.completeQuest = function(id, note) {
+  const q = GameState.quests[id];
+  if (!q || (q.state !== "active" && q.state !== "not_started")) return;
+  q.state = "completed";
+  if (note) q.log.push(note);
+  this.showStatus(`Quest completed: ${q.name}`);
+};
+
+// -----------------------------
+// 7. QUEST TRIGGERS (ROOM-BASED)
+// -----------------------------
+// Extend your roomGrid entries with optional questTriggers array, e.g.:
+// questTriggers: [
+//   { id: "lantern_start", x: 300, y: 420, w: 80, h: 40, type: "start", quest: "lanternQuest" }
+// ]
+
+this.questTriggers = [];
+this.questTriggerGroup = null;
+
+// In GameScene.create(), after other groups:
+this.questTriggerGroup = this.physics.add.staticGroup();
+
+// Modify loadRoom to spawn quest triggers:
+const oldLoadRoomQuest = this.loadRoom;
+this.loadRoom = function(row, col) {
+  oldLoadRoomQuest.call(this, row, col);
+
+  // Clear old quest triggers
+  this.questTriggerGroup.clear(true, true);
+  this.questTriggers = [];
+
+  const key = `${row},${col}`;
+  const room = this.roomGrid[key];
+  if (!room || !room.questTriggers) return;
+
+  room.questTriggers.forEach(t => {
+    const trig = this.questTriggerGroup.create(t.x, t.y, "hitbox");
+    trig.setVisible(false);
+    trig.setDisplaySize(t.w, t.h);
+    trig.refreshBody();
+    trig
+
+// ======================================================
+// CHUNK 7 — BOSS ENGINE (PHASES, TELEGRAPHS, ARENA LOCK)
+// ======================================================
+
+// -----------------------------
+// 1. EXTEND GAMESTATE
+// -----------------------------
+GameState.bosses = {
+  cavernBeast: {
+    id: "cavernBeast",
+    name: "The Cavern Beast",
+    defeated: false,
+    room: { row: 1, col: 2 }
+  }
+};
+
+
+// -----------------------------
+// 2. ADD TO GameScene CONSTRUCTOR
+// -----------------------------
+this.boss = null;
+this.bossActive = false;
+this.bossArenaLocked = false;
+this.bossHealthBar = null;
+
+
+// -----------------------------
+// 3. IN GameScene.create()
+// -----------------------------
+this.createBossHealthBar();
+
+
+// -----------------------------
+// 4. BOSS HEALTH BAR UI
+// -----------------------------
+this.createBossHealthBar = function() {
+  const { width } = this.scale;
+
+  const bar = this.add.rectangle(width / 2, 40, 300, 20, 0x660000)
+    .setScrollFactor(0)
+    .setDepth(200)
+    .setVisible(false);
+
+  const fill = this.add.rectangle(width / 2 - 150, 40, 300, 20, 0xff2222)
+    .setOrigin(0, 0.5)
+    .setScrollFactor(0)
+    .setDepth(201)
+    .setVisible(false);
+
+  this.bossHealthBar = { bar, fill };
+};
+
+
+// -----------------------------
+// 5. SPAWN BOSS WHEN ROOM LOADS
+// -----------------------------
+this.spawnBossForRoom = function(row, col) {
+  this.boss = null;
+  this.bossActive = false;
+  this.bossArenaLocked = false;
+
+  Object.values(GameState.bosses).forEach(b => {
+    if (b.room.row === row && b.room.col === col && !b.defeated) {
+      this.createBoss(b);
+    }
+  });
+};
+
+
+// -----------------------------
+// 6. CALL THIS INSIDE loadRoom()
+// -----------------------------
+// After NPCs:
+// this.spawnBossForRoom(row, col);
+
+
+// -----------------------------
+// 7. CREATE BOSS
+// -----------------------------
+this.createBoss = function(bossData) {
+  const boss = this.physics.add.sprite(600, 380, "enemy");
+  boss.setDisplaySize(80, 80);
+  boss.body.setSize(80, 80);
+  boss.setCollideWorldBounds(true);
+
+  boss.id = bossData.id;
+  boss.name = bossData.name;
+  boss.maxHP = 60;
+  boss.hp = 60;
+  boss.phase = 1;
+  boss.state = "intro";
+  boss.stateTimer = 2000;
+
+  this.boss = boss;
+  this.bossActive = true;
+
+  this.physics.add.collider(boss, this.groundLayer);
+  this.physics.add.overlap(this.player, boss, this.onBossHitPlayer, null, this);
+  this.physics.add.overlap(this.attackHitbox, boss, this.onPlayerHitBoss, null, this);
+
+  this.startBossIntro(boss);
+};
+
+
+// -----------------------------
+// 8. BOSS INTRO CUTSCENE
+// -----------------------------
+this.startBossIntro = function(boss) {
+  this.player.setVelocity(0, 0);
+  this.player.body.enable = false;
+
+  this.showCenterMessage(boss.name);
+
+  this.time.delayedCall(1500, () => {
+    this.player.body.enable = true;
+    this.lockBossArena();
+    this.showBossHealthBar(true);
+    boss.state = "idle";
+  });
+};
+
+
+// -----------------------------
+// 9. LOCK / UNLOCK ARENA
+// -----------------------------
+this.lockBossArena = function() {
+  this.bossArenaLocked = true;
+
+  // Create invisible walls
+  this.arenaLeft = this.physics.add.staticSprite(50, 300, "hitbox").setVisible(false);
+  this.arenaLeft.setDisplaySize(20, 600).refreshBody();
+
+  this.arenaRight = this.physics.add.staticSprite(910, 300, "hitbox").setVisible(false);
+  this.arenaRight.setDisplaySize(20, 600).refreshBody();
+
+  this.physics.add.collider(this.player, this.arenaLeft);
+  this.physics.add.collider(this.player, this.arenaRight);
+};
+
+this.unlockBossArena = function() {
+  this.bossArenaLocked = false;
+  if (this.arenaLeft) this.arenaLeft.destroy();
+  if (this.arenaRight) this.arenaRight.destroy();
+};
+
+
+// -----------------------------
+// 10. BOSS HEALTH BAR CONTROL
+// -----------------------------
+this.showBossHealthBar = function(show) {
+  this.bossHealthBar.bar.setVisible(show);
+  this.bossHealthBar.fill.setVisible(show);
+};
+
+this.updateBossHealthBar = function() {
+  if (!this.boss) return;
+  const ratio = this.boss.hp / this.boss.maxHP;
+  this.bossHealthBar.fill.width = 300 * ratio;
+};
+
+
+// -----------------------------
+// 11. PLAYER HITS BOSS
+// -----------------------------
+this.onPlayerHitBoss = function(hitbox, boss) {
+  if (!this.attackActive || !boss.active) return;
+
+  const dmg = hitbox.weaponDamage || 1;
+  boss.hp -= dmg;
+
+  this.hitPause(80);
+  this.cameras.main.shake(120, 0.01);
+
+  this.updateBossHealthBar();
+
+  if (boss.hp <= 0) {
+    this.killBoss(boss);
+  } else {
+    this.checkBossPhase(boss);
+  }
+};
+
+
+// -----------------------------
+// 12. BOSS HITS PLAYER
+// -----------------------------
+this.onBossHitPlayer = function(player, boss) {
+  if (!this.canTakeDamage) return;
+  this.damagePlayer(boss);
+};
+
+
+// -----------------------------
+// 13. BOSS PHASE LOGIC
+// -----------------------------
+this.checkBossPhase = function(boss) {
+  if (boss.phase === 1 && boss.hp <= boss.maxHP * 0.6) {
+    boss.phase = 2;
+    boss.state = "roar";
+    boss.stateTimer = 1200;
+    this.cameras.main.shake(200, 0.02);
+  }
+
+  if (boss.phase === 2 && boss.hp <= boss.maxHP * 0.3) {
+    boss.phase = 3;
+    boss.state
+
+// ======================================================
+// CHUNK 8 — MAP SYSTEM (FOG OF WAR, ICONS, FAST TRAVEL)
+// BLUEPRINT ONLY — STRUCTURE, NOT EXECUTABLE CODE
+// ======================================================
+
+// -----------------------------
+// 1. MAP DATA STRUCTURE
+// -----------------------------
+GameState.mapData = {
+  discovered: {},        // "row,col": true
+  icons: {},             // "row,col": [ { type, label } ]
+  fastTravelNodes: {},   // "row,col": true
+  hasMap: false,         // unlocked by item
+  hasQuill: false,       // updates map automatically
+  hasCompass: false      // shows player marker
+};
+
+
+// -----------------------------
+// 2. DISCOVER ROOMS
+// -----------------------------
+function discoverRoom(row, col) {
+  if (GameState.hasQuill) {
+    GameState.mapData.discovered[`${row},${col}`] = true;
+  }
+}
+
+
+// -----------------------------
+// 3. MAP UI OVERLAY
+// -----------------------------
+function createMapUI() {
+  // mapPanel: background rectangle
+  // mapGrid: container for room squares
+  // mapFogLayer: dark overlay for undiscovered rooms
+  // mapIconsLayer: NPCs, bosses, benches, items
+  // mapPlayerMarker: shows player position if compass unlocked
+  // mapControls: zoom/pan
+}
+
+
+// -----------------------------
+// 4. RENDER MAP GRID
+// -----------------------------
+function renderMapGrid() {
+  // Determine min/max rows/cols from roomGrid
+  // For each room:
+  //   draw square
+  //   color based on region
+  //   if not discovered → draw fog overlay
+  //   if icons exist → draw icons
+  // If compass unlocked → draw player marker
+}
+
+
+// -----------------------------
+// 5. ICON SYSTEM
+// -----------------------------
+function addMapIcon(row, col, type, label) {
+  const key = `${row},${col}`;
+  if (!GameState.mapData.icons[key]) {
+    GameState.mapData.icons[key] = [];
+  }
+  GameState.mapData.icons[key].push({ type, label });
+}
+
+// Example icons:
+// type: "npc", "boss", "bench", "item", "shop", "fastTravel"
+
+
+// -----------------------------
+// 6. FAST TRAVEL SYSTEM
+// -----------------------------
+function openFastTravelMenu() {
+  // Only if:
+  //   - player is at a bench or fastTravel node
+  //   - at least 2 nodes discovered
+  //   - map unlocked
+}
+
+function teleportToNode(row, col) {
+  // loadRoom(row, col)
+  // set player spawn position
+}
+
+
+// -----------------------------
+// 7. MAP CONTROLS
+// -----------------------------
+function handleMapControls() {
+  // M → toggle map
+  // Arrow keys → pan
+  // + / - → zoom
+  // Enter → fast travel (if available)
+}
+
+
+// -----------------------------
+// 8. ROOM INTEGRATION
+// -----------------------------
+function integrateRoomWithMap(row, col, room) {
+  // Mark discovered
+  discoverRoom(row, col);
+
+  // Add icons based on room data
+  if (room.mapIcon) {
+    room.mapIcon.forEach(icon => {
+      addMapIcon(row, col, icon.type, icon.label);
+    });
+  }
+
+  // Fast travel node
+  if (room.fastTravel) {
+    GameState.mapData.fastTravelNodes[`${row},${col}`] = true;
+  }
+}
+
+
+// -----------------------------
+// 9. MAP UNLOCK ITEMS
+// -----------------------------
+function unlockMapFragment() {
+  GameState.mapData.hasMap = true;
+}
+
+function unlockQuill() {
+  GameState.mapData.hasQuill = true;
+}
+
+function unlockCompass() {
+  GameState.mapData.hasCompass = true;
+}
+
+
+// -----------------------------
+// 10. MAP OPEN/CLOSE
+// -----------------------------
+function toggleMap() {
+  if (!GameState.mapData.hasMap) {
+    showStatus("You need a map to view this.");
+    return;
+  }
+
+  // pause gameplay
+  // show map UI
+  // render map
+}
+
+// ======================================================
+// CHUNK 9 — SAVE / LOAD SYSTEM (BLUEPRINT ONLY)
+// ======================================================
+
+// -----------------------------
+// 1. SAVE DATA STRUCTURE
+// -----------------------------
+GameState.saveData = {
+  slots: {
+    slot1: null,
+    slot2: null,
+    slot3: null
+  }
+};
+
+// A save slot contains:
+function createSaveSnapshot() {
+  return {
+    timestamp: Date.now(),
+
+    // Player state
+    health: GameState.health,
+    maxHealth: GameState.maxHealth,
+    soul: GameState.soul,
+    geo: GameState.geo,
+
+    // Position + room
+    room: {
+      row: GameState.currentRoom?.row || 0,
+      col: GameState.currentRoom?.col || 0
+    },
+    position: {
+      x: this.player?.x || 200,
+      y: this.player?.y || 400
+    },
+
+    // Inventory
+    inventory: JSON.parse(JSON.stringify(GameState.inventory || {})),
+
+    // Abilities
+    abilities: JSON.parse(JSON.stringify(GameState.abilities || {})),
+
+    // Quests
+    quests: JSON.parse(JSON.stringify(GameState.quests || {})),
+
+    // Bosses
+    bosses: JSON.parse(JSON.stringify(GameState.bosses || {})),
+
+    // Map discovery
+    mapData: JSON.parse(JSON.stringify(GameState.mapData || {}))
+  };
+}
+
+
+// -----------------------------
+// 2. SAVE TO LOCALSTORAGE
+// -----------------------------
+function saveToSlot(slotName) {
+  const snapshot = createSaveSnapshot();
+  GameState.saveData.slots[slotName] = snapshot;
+  localStorage.setItem("metroidvania_save_" + slotName, JSON.stringify(snapshot));
+  showStatus("Game Saved");
+}
+
+
+// -----------------------------
+// 3. LOAD FROM LOCALSTORAGE
+// -----------------------------
+function loadFromSlot(slotName) {
+  const raw = localStorage.getItem("metroidvania_save_" + slotName);
+  if (!raw) {
+    showStatus("No save data in this slot");
+    return null;
+  }
+
+  const data = JSON.parse(raw);
+  applySaveSnapshot(data);
+  return data;
+}
+
+
+// -----------------------------
+// 4. APPLY SAVE SNAPSHOT
+// -----------------------------
+function applySaveSnapshot(data) {
+  // Player stats
+  GameState.health = data.health;
+  GameState.maxHealth = data.maxHealth;
+  GameState.soul = data.soul;
+  GameState.geo = data.geo;
+
+  // Inventory
+  GameState.inventory = JSON.parse(JSON.stringify(data.inventory));
+
+  // Abilities
+  GameState.abilities = JSON.parse(JSON.stringify(data.abilities));
+
+  // Quests
+  GameState.quests = JSON.parse(JSON.stringify(data.quests));
+
+  // Bosses
+  GameState.bosses = JSON.parse(JSON.stringify(data.bosses));
+
+  // Map
+  GameState.mapData = JSON.parse(JSON.stringify(data.mapData));
+
+  // Move player to saved room
+  const row = data.room.row;
+  const col = data.room.col;
+
+  // Load room + position
+  this.loadRoom(row, col);
+  this.player.x = data.position.x;
+  this.player.y = data.position.y;
+
+  showStatus("Game Loaded");
+}
+
+
+// -----------------------------
+// 5. AUTOSAVE AT BENCHES
+// -----------------------------
+// When player sits at a bench:
+function autosave() {
+  saveToSlot("slot1");
+}
+
+
+// -----------------------------
+// 6. SAVE MENU UI (BLUEPRINT)
+// -----------------------------
+function createSaveMenuUI() {
+  // savePanel: background
+  // slotButtons: slot1, slot2, slot3
+  // loadButtons: load slot
+  // deleteButtons: delete slot
+  // confirm prompts
+}
+
+
+// -----------------------------
+// 7. DELETE SAVE SLOT
+// -----------------------------
+function deleteSaveSlot(slotName) {
+  localStorage.removeItem("metroidvania_save_" + slotName);
+  GameState.saveData.slots[slotName] = null;
+  showStatus("Save Deleted");
+}
+
+
+// -----------------------------
+// 8. INTEGRATION HOOKS
+// -----------------------------
+// Call saveToSlot("slot1") when:
+// - Player rests at a bench
+// - Player enters a safe room
+// - Player completes a major quest
+// - Player defeats a boss
+
+// Call loadFromSlot("slot1") from:
+// - Title screen "Continue"
+// - Save menu "Load Game"
+
+// ======================================================
+// CHUNK 10 — FINAL POLISH (TITLE, ENDING, AUDIO, FX, UX)
+// BLUEPRINT-STYLE, READY TO IMPLEMENT
+// ======================================================
+
+// -----------------------------
+// 1. TITLE SCREEN SCENE
+// -----------------------------
+class TitleScene extends Phaser.Scene {
+  constructor() {
+    super("TitleScene");
+  }
+
+  create() {
+    // Background
+    // this.add.image(...)
+
+    // Game title
+    // this.add.text(centerX, centerY - 80, "Hollow-Like", {...})
+
+    // Menu options: New Game, Continue, Options, Quit
+    // Use cursor keys + Enter to select
+
+    // If "New Game" → reset GameState, start GameScene
+    // If "Continue" → loadFromSlot("slot1") if exists
+    // If "Options" → open options overlay (volume, keybinds)
+  }
+}
+
+// Boot flow:
+// game.scene.add("TitleScene", TitleScene);
+// game.scene.start("TitleScene");
+
+// -----------------------------
+// 2. PAUSE MENU OVERLAY
+// -----------------------------
+function createPauseMenuUI() {
+  // pausePanel: dark overlay
+  // options: Resume, Options, Quit to Title
+  // ESC or P → toggle pause
+}
+
+function togglePause() {
+  // If not paused:
+  //   - pause physics
+  //   - pause timers
+  //   - show pause UI
+  // If paused:
+  //   - resume physics
+  //   - hide pause UI
+}
+
+// -----------------------------
+// 3. ENDING SEQUENCE
+// -----------------------------
+function triggerEnding(endingId) {
+  // Called when final boss defeated or final quest completed
+
+  // Fade out gameplay
+  // this.cameras.main.fadeOut(1500, 0, 0, 0);
+
+  // Show ending text based on endingId:
+  //   "standard", "secret", "bad", etc.
+
+  // After text → roll credits
+  startCredits();
+}
+
+// -----------------------------
+// 4. CREDITS ROLL
+// -----------------------------
+function startCredits() {
+  // Create scrolling text container
+  // Move upward over time
+  // After credits → back to TitleScene
+}
+
+// -----------------------------
+// 5. AUDIO POLISH
+// -----------------------------
+GameState.audioSettings = {
+  musicVolume: 0.7,
+  sfxVolume: 0.9,
+  muted: false
+};
+
+function createAudioSystem() {
+  // Background music per region:
+  // cavernsTheme, ruinsTheme, forgeTheme, townTheme, bossTheme
+
+  // Crossfade when region changes
+  // this.tweens.add to fade out old, fade in new
+
+  // SFX helpers:
+  // playSFX("hit"), playSFX("jump"), playSFX("dash"), playSFX("spell"), playSFX("uiMove"), playSFX("uiSelect")
+}
+
+function setMusicVolume(v) {
+  GameState.audioSettings.musicVolume = v;
+  // Apply to all music tracks
+}
+
+function setSFXVolume(v) {
+  GameState.audioSettings.sfxVolume = v;
+  // Apply to all SFX
+}
+
+// -----------------------------
+// 6. SCREEN SHAKE & HIT PAUSE TUNING
+// -----------------------------
+function tunedHitPause(duration) {
+  // Slightly shorter for normal hits
+  // Longer for parries, boss hits
+}
+
+function tunedScreenShake(intensity, duration) {
+  // Use smaller values for readability
+}
+
+// -----------------------------
+// 7. UI ANIMATIONS
+// -----------------------------
+function animateHUD() {
+  // Health or soul bar pulses when changed
+  // Geo count pops when increased
+  // Ability unlock banner slides in/out
+}
+
+function showAbilityUnlock(name) {
+  // Banner at top: "New Ability: " + name
+  // Slide in, hold, slide out
+}
+
+// -----------------------------
+// 8. OPTIONS MENU
+// -----------------------------
+function createOptionsMenu() {
+  // Items:
+  // - Music Volume
+  // - SFX Volume
+  // - Screen Shake: On/Off
+  // - Hit Flash: On/Off
+  // - Keybinds (optional)
+
+  // Store in GameState.options
+}
+
+GameState.options = {
+  screenShake: true,
+  hitFlash: true
+};
+
+// Respect options in combat:
+// if (!GameState.options.screenShake) skip shake
+// if (!GameState.options.hitFlash) skip white flash on hit
+
+// -----------------------------
+// 9. ACCESSIBILITY TOUCHES
+// -----------------------------
+function applyAccessibility() {
+  // Optional:
+  // - High contrast mode
+  // - Reduced motion (less shake, slower flashes)
+  // - Larger font option
+}
+
+// -----------------------------
+// 10. NEW GAME+ HOOK
+// -----------------------------
+function startNewGamePlus() {
+  // Called after beating game once
+  // Keep:
+  //   - Some abilities
+  //   - Some charms
+  // Increase:
+  //   - Enemy HP
+  //   - Boss damage
+  // Maybe add:
+  //   - Extra charms
+  //   - New enemy variants
+}
+
+// TitleScene menu can show "New Game+" if GameState.flags.gameCleared is true
+
+
+
+
