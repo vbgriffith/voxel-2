@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Portal Puzzle Clone (Three.js, No NPM)</title>
+<style>
+  body { margin: 0; overflow: hidden; background: black; }
+  #ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-family: monospace;
+    color: white;
+    background: rgba(0,0,0,0.6);
+    padding: 8px;
+  }
+</style>
+</head>
+<body>
+<div id="ui">WASD + Mouse<br>Step on buttons to unlock portals</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/PointerLockControls.js"></script>
+
+<script>
+/* ---------------- SETUP ---------------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x101020);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+/* ---------------- CONTROLS ---------------- */
+const controls = new THREE.PointerLockControls(camera, document.body);
+document.body.addEventListener("click", () => controls.lock());
+scene.add(controls.getObject());
+
+/* ---------------- LIGHTS ---------------- */
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const light = new THREE.DirectionalLight(0xffffff, 0.7);
+light.position.set(5, 10, 5);
+scene.add(light);
+
+/* ---------------- CONSTANTS ---------------- */
+const LEVEL_HEIGHT = 14;
+const interactables = [];
+const portals = [];
+
+/* ---------------- LEVEL CREATOR ---------------- */
+function createRoom(y) {
+  const room = new THREE.Group();
+  room.position.y = y;
+
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 1, 10),
+    new THREE.MeshStandardMaterial({ color: 0x333333 })
+  );
+  floor.position.y = -0.5;
+  room.add(floor);
+
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+  const wallGeo = new THREE.BoxGeometry(10, 4, 1);
+
+  [-5, 5].forEach(z => {
+    const w = new THREE.Mesh(wallGeo, wallMat);
+    w.position.set(0, 2, z);
+    room.add(w);
+  });
+
+  scene.add(room);
+  return room;
+}
+
+/* ---------------- BUTTON ---------------- */
+function createButton(x, y, z, onPress) {
+  const button = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 0.2, 1),
+    new THREE.MeshStandardMaterial({ color: 0xff4444 })
+  );
+  button.position.set(x, y, z);
+  button.userData = { pressed: false, onPress };
+  interactables.push(button);
+  scene.add(button);
+}
+
+/* ---------------- DOOR ---------------- */
+function createDoor(x, y, z) {
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(2, 3, 0.4),
+    new THREE.MeshStandardMaterial({ color: 0x2222ff })
+  );
+  door.position.set(x, y + 1.5, z);
+  scene.add(door);
+
+  return {
+    mesh: door,
+    open() {
+      door.position.y += 4;
+    }
+  };
+}
+
+/* ---------------- PORTAL ---------------- */
+function createPortal(x, y, z, targetLevel) {
+  const portal = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 3),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide })
+  );
+  portal.position.set(x, y + 1.5, z);
+  portal.userData = { targetLevel, locked: true };
+  portals.push(portal);
+  scene.add(portal);
+  return portal;
+}
+
+/* ---------------- LEVEL 0 ---------------- */
+createRoom(0);
+
+const door0 = createDoor(0, 0, -4.9);
+const portal0 = createPortal(0, 0, -4.8, 1);
+
+createButton(2, 0.1, 2, () => {
+  door0.open();
+  portal0.userData.locked = false;
+  portal0.material.color.set(0x00ff00);
+});
+
+/* ---------------- LEVEL 1 ---------------- */
+createRoom(LEVEL_HEIGHT);
+
+const door1 = createDoor(-2, LEVEL_HEIGHT, -4.9);
+const portal1 = createPortal(-2, LEVEL_HEIGHT, -4.8, 0);
+
+createButton(-3, LEVEL_HEIGHT + 0.1, 3, () => {
+  door1.open();
+  portal1.userData.locked = false;
+  portal1.material.color.set(0x00ff00);
+});
+
+/* ---------------- MOVEMENT ---------------- */
+const keys = {};
+document.addEventListener("keydown", e => keys[e.code] = true);
+document.addEventListener("keyup", e => keys[e.code] = false);
+
+camera.position.set(0, 2, 2);
+
+/* ---------------- INTERACTION ---------------- */
+function checkButtons() {
+  interactables.forEach(obj => {
+    if (!obj.userData.pressed &&
+        obj.position.distanceTo(camera.position) < 1) {
+      obj.userData.pressed = true;
+      obj.material.color.set(0x00ff00);
+      obj.userData.onPress();
+    }
+  });
+}
+
+function checkPortals() {
+  portals.forEach(p => {
+    if (!p.userData.locked &&
+        p.position.distanceTo(camera.position) < 1.2) {
+      camera.position.y = p.userData.targetLevel * LEVEL_HEIGHT + 2;
+      camera.position.z = 2;
+    }
+  });
+}
+
+/* ---------------- LOOP ---------------- */
+function animate() {
+  requestAnimationFrame(animate);
+
+  const speed = 0.08;
+  if (keys["KeyW"]) controls.moveForward(speed);
+  if (keys["KeyS"]) controls.moveForward(-speed);
+  if (keys["KeyA"]) controls.moveRight(-speed);
+  if (keys["KeyD"]) controls.moveRight(speed);
+
+  checkButtons();
+  checkPortals();
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
