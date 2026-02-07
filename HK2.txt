@@ -1,0 +1,911 @@
+// ======================================================
+// CHUNKS 1–4 COMBINED (CORE ENGINE + ROOMS + ABILITIES + COMBAT)
+// ======================================================
+
+// -----------------------------
+// GLOBAL GAMESTATE
+// -----------------------------
+const GameState = {
+  health: 5,
+  maxHealth: 5,
+  soul: 0,
+  abilities: {
+    dash: false,
+    wallJump: false,
+    doubleJump: false,
+    spells: { fireball: false }
+  },
+  weapons: {
+    nail: { dmg:1, range:40, cooldown:150, type:"physical", knockback:1 },
+    greatblade: { dmg:3, range:60, cooldown:380, type:"physical", knockback:2 },
+    soulSpear: { dmg:2, range:140, cooldown:260, type:"soul", projectile:true }
+  },
+  currentWeapon: "nail"
+};
+
+// -----------------------------
+// SIMPLE ROOM GRID
+// -----------------------------
+const roomGrid = {
+  "0,0": {
+    platforms: [{x:0,y:500,w:960,h:40}],
+    enemies: [{x:600,y:460,type:"crawler"}]
+  },
+  "0,1": {
+    platforms: [{x:0,y:500,w:960,h:40}],
+    enemies: [{x:400,y:460,type:"charger"}]
+  }
+};
+
+// ======================================================
+// MAIN GAME SCENE
+// ======================================================
+class GameScene extends Phaser.Scene {
+  constructor() { super("GameScene"); }
+
+  preload() {
+    this.load.image("player","https://labs.phaser.io/assets/sprites/phaser-dude.png");
+    this.load.image("enemy","https://labs.phaser.io/assets/sprites/red_ball.png");
+    this.load.image("projectile","https://labs.phaser.io/assets/sprites/bullet.png");
+  }
+
+  create() {
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.attackKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.parryKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+
+    this.platforms = this.physics.add.staticGroup();
+    this.enemies = this.physics.add.group();
+
+    this.player = this.physics.add.sprite(200,400,"player").setCollideWorldBounds(true);
+    this.player.facing = "right";
+
+    this.attackHitbox = this.add.rectangle(0,0,40,40,0xff0000,0.3)
+      .setVisible(false);
+    this.physics.add.existing(this.attackHitbox);
+    this.attackHitbox.body.setAllowGravity(false);
+
+    this.physics.add.overlap(this.attackHitbox,this.enemies,(h,e)=>this.onAttackHitEnemy(h,e));
+
+    this.attackActive = false;
+    this.canTakeDamage = true;
+
+    this.isParrying = false;
+    this.parryWindow = 120;
+    this.parryTimer = 0;
+
+    this.loadRoom(0,0);
+  }
+
+  // -----------------------------
+  // ROOM LOADING
+  // -----------------------------
+  loadRoom(r,c) {
+    this.platforms.clear(true,true);
+    this.enemies.clear(true,true);
+
+    const room = roomGrid[`${r},${c}`];
+    if (!room) return;
+
+    room.platforms.forEach(p=>{
+      const plat = this.platforms.create(p.x+p.w/2,p.y+p.h/2,null)
+        .setDisplaySize(p.w,p.h).setVisible(false);
+      plat.refreshBody();
+    });
+
+    room.enemies.forEach(e=>{
+      const enemy = this.enemies.create(e.x,e.y,"enemy");
+      this.initEnemy(enemy,e.type);
+    });
+
+    this.physics.add.collider(this.player,this.platforms);
+    this.physics.add.collider(this.enemies,this.platforms);
+    this.physics.add.overlap(this.player,this.enemies,(p,e)=>this.onPlayerEnemyOverlap(p,e));
+  }
+
+  // -----------------------------
+  // ENEMY INIT + AI
+  // -----------------------------
+  initEnemy(enemy,type="crawler") {
+    enemy.enemyType = type;
+    enemy.hp = 3;
+    enemy.state = "patrol";
+    enemy.stateTimer = 0;
+
+    if (type==="crawler") {
+      enemy.speed = 60;
+      enemy.resist = {physical:1.0,soul:1.0};
+    } else if (type==="charger") {
+      enemy.speed = 120;
+      enemy.resist = {physical:0.8,soul:1.2};
+    }
+  }
+
+  updateEnemies(time,delta) {
+    this.enemies.children.iterate(enemy=>{
+      if (!enemy.active) return;
+
+      enemy.stateTimer -= delta;
+      const dist = Phaser.Math.Distance.Between(this.player.x,this.player.y,enemy.x,enemy.y);
+
+      switch(enemy.state) {
+        case "patrol":
+          enemy.setVelocityX(enemy.speed);
+          if (dist<200) { enemy.state="chase"; enemy.stateTimer=500; }
+          break;
+
+        case "chase":
+          enemy.setVelocityX(this.player.x<enemy.x?-enemy.speed:enemy.speed);
+          if (dist<60) { enemy.state="attack"; enemy.stateTimer=400; }
+          break;
+
+        case "attack":
+          if (enemy.stateTimer<=0) {
+            const dir = this.player.x<enemy.x?-1:1;
+            enemy.setVelocityX(dir*enemy.speed*3);
+            enemy.state="recover";
+            enemy.stateTimer=400;
+          }
+          break;
+
+        case "recover":
+          if (enemy.stateTimer<=0) enemy.state="patrol";
+          break;
+      }
+    });
+  }
+
+  // -----------------------------
+  // PLAYER MOVEMENT + ABILITIES
+  // -----------------------------
+  handleMovement() {
+    const speed = 200;
+    this.player.setVelocityX(0);
+
+    if (this.cursors.left.isDown) {
+      this.player.setVelocityX(-speed);
+      this.player.facing="left";
+    }
+    if (this.cursors.right.isDown) {
+      this.player.setVelocityX(speed);
+      this.player.facing="right";
+    }
+    if (this.cursors.up.isDown && this.player.body.onFloor()) {
+      this.player.setVelocityY(-450);
+    }
+  }
+
+  // -----------------------------
+  // COMBAT: MELEE + PROJECTILE
+  // -----------------------------
+  performAttack() {
+    const weapon = GameState.weapons[GameState.currentWeapon];
+    if (!weapon) return;
+
+    if (weapon.projectile) {
+      this.castProjectile(weapon);
+      return;
+    }
+
+    this.attackActive = true;
+
+    const offset = this.player.facing==="right"?weapon.range:-weapon.range;
+    this.attackHitbox.setPosition(this.player.x+offset,this.player.y);
+    this.attackHitbox.weaponDamage = weapon.dmg;
+    this.attackHitbox.weaponType = weapon.type;
+    this.attackHitbox.knockback = weapon.knockback;
+    this.attackHitbox.setVisible(true);
+
+    this.time.delayedCall(120,()=>{
+      this.attackHitbox.setVisible(false);
+      this.attackActive=false;
+    });
+  }
+
+  castProjectile(weapon) {
+    const dir = this.player.facing==="right"?1:-1;
+    const proj = this.physics.add.sprite(this.player.x,this.player.y,"projectile");
+    proj.body.setAllowGravity(false);
+    proj.setVelocityX(700*dir);
+    proj.weaponDamage = weapon.dmg;
+    proj.weaponType = weapon.type;
+
+    this.physics.add.overlap(proj,this.enemies,(p,e)=>{
+      this.applyDamage(e,p.weaponDamage,p.weaponType);
+      p.destroy();
+    });
+  }
+
+  onAttackHitEnemy(hitbox,enemy) {
+    if (!this.attackActive) return;
+    this.applyDamage(enemy,hitbox.weaponDamage,hitbox.weaponType);
+
+    const dir = this.player.x<enemy.x?1:-1;
+    enemy.setVelocityX(200*dir*(hitbox.knockback||1));
+  }
+
+  applyDamage(enemy,base,type) {
+    const resist = enemy.resist?.[type] ?? 1;
+    const dmg = Math.max(1,Math.round(base*resist));
+    enemy.hp -= dmg;
+
+    if (enemy.hp<=0) enemy.disableBody(true,true);
+  }
+
+  // -----------------------------
+  // PARRY
+  // -----------------------------
+  handleParry(time,delta) {
+    if (Phaser.Input.Keyboard.JustDown(this.parryKey)) {
+      this.isParrying=true;
+      this.parryTimer=this.parryWindow;
+      this.player.setTint(0xddddff);
+    }
+
+    if (this.isParrying) {
+      this.parryTimer -= delta;
+      if (this.parryTimer<=0) {
+        this.isParrying=false;
+        this.player.clearTint();
+      }
+    }
+  }
+
+  onPlayerEnemyOverlap(player,enemy) {
+    if (this.isParrying && enemy.state==="attack") {
+      this.isParrying=false;
+      this.player.clearTint();
+      enemy.state="stunned";
+      enemy.stateTimer=800;
+      return;
+    }
+
+    if (!this.canTakeDamage) return;
+    this.damagePlayer(enemy);
+  }
+
+  damagePlayer(enemy) {
+    GameState.health -= 1;
+    this.canTakeDamage=false;
+    this.player.setTint(0xff4444);
+
+    this.time.delayedCall(800,()=>{
+      this.canTakeDamage=true;
+      this.player.clearTint();
+    });
+  }
+
+  // -----------------------------
+  // UPDATE LOOP
+  // -----------------------------
+  update(time,delta) {
+    this.handleMovement();
+    this.handleParry(time,delta);
+    this.updateEnemies(time,delta);
+
+    if (Phaser.Input.Keyboard.JustDown(this.attackKey)) {
+      this.performAttack();
+    }
+
+    // Simple room transition
+    if (this.player.x>960) { this.player.x=10; this.loadRoom(0,1); }
+    if (this.player.x<0)   { this.player.x=950; this.loadRoom(0,0); }
+  }
+}
+
+// ======================================================
+// PHASER CONFIG
+// ======================================================
+const config = {
+  type: Phaser.AUTO,
+  width: 960,
+  height: 540,
+  backgroundColor: "#000",
+  physics: { default:"arcade", arcade:{gravity:{y:1200},debug:false} },
+  scene: [GameScene]
+};
+
+new Phaser.Game(config);
+
+
+// ======================================================
+// CHUNKS 5–7 COMBINED (NPCs + Dialogue + Quests + Boss Engine)
+// ======================================================
+
+// -----------------------------
+// NPC DEFINITIONS
+// -----------------------------
+GameState.npcs = {
+  elder: {
+    id: "elder",
+    name: "The Elder",
+    dialogue: [
+      "Welcome, traveler.",
+      "The caverns below hold an ancient lantern.",
+      "Seek it, and light will follow."
+    ],
+    shop: null
+  },
+  merchant: {
+    id: "merchant",
+    name: "Wandering Merchant",
+    dialogue: ["Looking to buy something?"],
+    shop: [
+      { item: "healthShard", price: 40 },
+      { item: "soulFragment", price: 60 }
+    ]
+  }
+};
+
+// -----------------------------
+// QUEST DEFINITIONS
+// -----------------------------
+GameState.quests = {
+  lanternQuest: {
+    id: "lanternQuest",
+    name: "Light in the Deep",
+    state: "not_started",
+    stage: 0,
+    description: "Find the lost lantern in the deep caverns.",
+    log: []
+  },
+  forgeKeyQuest: {
+    id: "forgeKeyQuest",
+    name: "Key to the Forge",
+    state: "not_started",
+    stage: 0,
+    description: "Retrieve the key from the ancient forge.",
+    log: []
+  }
+};
+
+// ======================================================
+// NPC SYSTEM
+// ======================================================
+class NPCSystem {
+  constructor(scene) {
+    this.scene = scene;
+    this.dialogueActive = false;
+    this.dialogueIndex = 0;
+    this.currentNPC = null;
+
+    this.dialogueBox = scene.add.text(40, 40, "", {
+      font: "16px sans-serif",
+      fill: "#fff",
+      wordWrap: { width: 400 }
+    }).setVisible(false).setDepth(200);
+
+    this.interactKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+  }
+
+  spawnNPCsForRoom(room) {
+    this.scene.npcGroup.clear(true, true);
+    if (!room.npcs) return;
+
+    room.npcs.forEach(n => {
+      const npc = this.scene.npcGroup.create(n.x, n.y, "npc");
+      npc.npcId = n.id;
+      npc.setImmovable(true);
+    });
+
+    this.scene.physics.add.overlap(
+      this.scene.player,
+      this.scene.npcGroup,
+      (p, npc) => this.startDialogue(npc),
+      null,
+      this
+    );
+  }
+
+  startDialogue(npcSprite) {
+    if (this.dialogueActive) return;
+
+    const npc = GameState.npcs[npcSprite.npcId];
+    if (!npc) return;
+
+    this.dialogueActive = true;
+    this.dialogueIndex = 0;
+    this.currentNPC = npc;
+
+    this.showDialogueLine();
+  }
+
+  showDialogueLine() {
+    const npc = this.currentNPC;
+    if (!npc) return;
+
+    if (this.dialogueIndex >= npc.dialogue.length) {
+      this.endDialogue();
+      return;
+    }
+
+    this.dialogueBox.setText(`${npc.name}: ${npc.dialogue[this.dialogueIndex]}`);
+    this.dialogueBox.setVisible(true);
+    this.dialogueIndex++;
+  }
+
+  endDialogue() {
+    this.dialogueActive = false;
+    this.dialogueBox.setVisible(false);
+
+    // Quest hook example
+    if (this.currentNPC.id === "elder" &&
+        GameState.quests.lanternQuest.state === "not_started") {
+      this.scene.startQuest("lanternQuest", "The Elder spoke of a lantern lost below.");
+    }
+
+    this.currentNPC = null;
+  }
+
+  update() {
+    if (this.dialogueActive && Phaser.Input.Keyboard.JustDown(this.interactKey)) {
+      this.showDialogueLine();
+    }
+  }
+}
+
+// ======================================================
+// QUEST SYSTEM
+// ======================================================
+class QuestSystem {
+  constructor(scene) {
+    this.scene = scene;
+
+    this.questKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+
+    this.questBox = scene.add.rectangle(760, 270, 260, 260, 0x050510, 0.9)
+      .setStrokeStyle(2, 0x88ff88)
+      .setScrollFactor(0)
+      .setDepth(120)
+      .setVisible(false);
+
+    this.questText = scene.add.text(640, 160, "", {
+      font: "13px sans-serif",
+      color: "#e0ffe0",
+      wordWrap: { width: 240 }
+    }).setScrollFactor(0).setDepth(121).setVisible(false);
+
+    this.visible = false;
+  }
+
+  toggle() {
+    this.visible = !this.visible;
+    this.questBox.setVisible(this.visible);
+    this.questText.setVisible(this.visible);
+
+    if (this.visible) this.render();
+  }
+
+  render() {
+    const active = Object.values(GameState.quests)
+      .filter(q => q.state === "active" || q.state === "completed");
+
+    if (active.length === 0) {
+      this.questText.setText("No quests yet.\n\nSpeak with those who still remember.");
+      return;
+    }
+
+    let text = "QUEST LOG\n\n";
+    active.forEach(q => {
+      text += `${q.name} [${q.state === "completed" ? "DONE" : "ACTIVE"}]\n`;
+      text += `${q.description}\n`;
+      if (q.log.length > 0) text += "- " + q.log[q.log.length - 1] + "\n";
+      text += "\n";
+    });
+
+    this.questText.setText(text);
+  }
+
+  startQuest(id, note) {
+    const q = GameState.quests[id];
+    if (!q || q.state !== "not_started") return;
+    q.state = "active";
+    q.stage = 1;
+    if (note) q.log.push(note);
+    this.scene.showStatus(`Quest started: ${q.name}`);
+  }
+
+  advanceQuest(id, note) {
+    const q = GameState.quests[id];
+    if (!q || q.state !== "active") return;
+    q.stage++;
+    if (note) q.log.push(note);
+    this.scene.showStatus(`Quest updated: ${q.name}`);
+  }
+
+  completeQuest(id, note) {
+    const q = GameState.quests[id];
+    if (!q || q.state !== "active") return;
+    q.state = "completed";
+    if (note) q.log.push(note);
+    this.scene.showStatus(`Quest completed: ${q.name}`);
+  }
+
+  update() {
+    if (Phaser.Input.Keyboard.JustDown(this.questKey)) {
+      this.toggle();
+    }
+  }
+}
+
+// ======================================================
+// BOSS ENGINE
+// ======================================================
+class BossEngine {
+  constructor(scene) {
+    this.scene = scene;
+    this.boss = null;
+    this.active = false;
+
+    this.healthBar = scene.add.rectangle(480, 40, 300, 20, 0x660000)
+      .setScrollFactor(0).setDepth(200).setVisible(false);
+
+    this.healthFill = scene.add.rectangle(330, 40, 300, 20, 0xff2222)
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(201).setVisible(false);
+  }
+
+  spawnBoss(data) {
+    const boss = this.scene.physics.add.sprite(600, 380, "enemy");
+    boss.setDisplaySize(80, 80);
+    boss.setCollideWorldBounds(true);
+
+    boss.id = data.id;
+    boss.name = data.name;
+    boss.maxHP = 60;
+    boss.hp = 60;
+    boss.phase = 1;
+    boss.state = "intro";
+    boss.stateTimer = 2000;
+
+    this.boss = boss;
+    this.active = true;
+
+    this.scene.physics.add.collider(boss, this.scene.platforms);
+    this.scene.physics.add.overlap(this.scene.player, boss, () => this.onBossHitPlayer());
+    this.scene.physics.add.overlap(this.scene.attackHitbox, boss, () => this.onPlayerHitBoss());
+
+    this.startIntro();
+  }
+
+  startIntro() {
+    this.scene.player.setVelocity(0, 0);
+    this.scene.player.body.enable = false;
+
+    this.scene.showCenterMessage(this.boss.name);
+
+    this.scene.time.delayedCall(1500, () => {
+      this.scene.player.body.enable = true;
+      this.showHealth(true);
+      this.boss.state = "idle";
+    });
+  }
+
+  showHealth(show) {
+    this.healthBar.setVisible(show);
+    this.healthFill.setVisible(show);
+  }
+
+  updateHealth() {
+    const ratio = this.boss.hp / this.boss.maxHP;
+    this.healthFill.width = 300 * ratio;
+  }
+
+  onPlayerHitBoss() {
+    const dmg = this.scene.attackHitbox.weaponDamage || 1;
+    this.boss.hp -= dmg;
+    this.updateHealth();
+
+    if (this.boss.hp <= 0) this.killBoss();
+  }
+
+  onBossHitPlayer() {
+    if (!this.scene.canTakeDamage) return;
+    this.scene.damagePlayer(this.boss);
+  }
+
+  killBoss() {
+    this.boss.disableBody(true, true);
+    this.active = false;
+    this.showHealth(false);
+    this.scene.showCenterMessage(`${this.boss.name} Defeated`);
+  }
+
+  update(time, delta) {
+    if (!this.active || !this.boss) return;
+
+    const boss = this.boss;
+    boss.stateTimer -= delta;
+
+    const dist = Phaser.Math.Distance.Between(
+      this.scene.player.x, this.scene.player.y,
+      boss.x, boss.y
+    );
+
+    switch (boss.state) {
+      case "idle":
+        if (dist < 300) {
+          boss.state = "attack";
+          boss.stateTimer = 800;
+        }
+        break;
+
+      case "attack":
+        if (boss.stateTimer <= 0) {
+          const dir = this.scene.player.x < boss.x ? -1 : 1;
+          boss.setVelocityX(dir * (boss.phase === 1 ? 200 : 300));
+          boss.state = "recover";
+          boss.stateTimer = 600;
+        }
+        break;
+
+      case "recover":
+        if (boss.stateTimer <= 0) {
+          boss.setVelocityX(0);
+          boss.state = "idle";
+        }
+        break;
+    }
+  }
+}
+
+// ======================================================
+// CHUNKS 8–10 COMBINED (MAP + SAVE/LOAD + POLISH)
+// BLUEPRINT-STYLE MODULE
+// ======================================================
+
+// ======================================================
+// 8. MAP SYSTEM (FOG OF WAR + ICONS + FAST TRAVEL)
+// ======================================================
+GameState.mapData = {
+  discovered: {},        // "row,col": true
+  icons: {},             // "row,col": [ { type, label } ]
+  fastTravelNodes: {},   // "row,col": true
+  hasMap: false,
+  hasQuill: false,
+  hasCompass: false
+};
+
+class MapSystem {
+  constructor(scene) {
+    this.scene = scene;
+    this.visible = false;
+
+    this.mapKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+
+    this.panel = scene.add.rectangle(480, 270, 700, 450, 0x000000, 0.85)
+      .setScrollFactor(0).setDepth(200).setVisible(false);
+
+    this.text = scene.add.text(200, 100, "", {
+      font: "14px sans-serif",
+      fill: "#fff",
+      wordWrap: { width: 600 }
+    }).setScrollFactor(0).setDepth(201).setVisible(false);
+  }
+
+  discoverRoom(row, col) {
+    if (GameState.mapData.hasQuill) {
+      GameState.mapData.discovered[`${row},${col}`] = true;
+    }
+  }
+
+  toggle() {
+    if (!GameState.mapData.hasMap) {
+      this.scene.showStatus("You need a map.");
+      return;
+    }
+    this.visible = !this.visible;
+    this.panel.setVisible(this.visible);
+    this.text.setVisible(this.visible);
+    if (this.visible) this.render();
+  }
+
+  render() {
+    let out = "MAP\n\n";
+    for (const key in GameState.mapData.discovered) {
+      out += `• Room ${key}\n`;
+      const icons = GameState.mapData.icons[key];
+      if (icons) {
+        icons.forEach(i => out += `   - ${i.type} ${i.label || ""}\n`);
+      }
+    }
+    this.text.setText(out);
+  }
+
+  addIcon(row, col, type, label) {
+    const key = `${row},${col}`;
+    if (!GameState.mapData.icons[key]) GameState.mapData.icons[key] = [];
+    GameState.mapData.icons[key].push({ type, label });
+  }
+
+  update() {
+    if (Phaser.Input.Keyboard.JustDown(this.mapKey)) {
+      this.toggle();
+    }
+  }
+}
+
+// ======================================================
+// 9. SAVE / LOAD SYSTEM
+// ======================================================
+class SaveSystem {
+  static createSnapshot(scene) {
+    return {
+      timestamp: Date.now(),
+      health: GameState.health,
+      maxHealth: GameState.maxHealth,
+      soul: GameState.soul,
+      geo: GameState.geo,
+      room: { ...GameState.currentRoom },
+      position: { x: scene.player.x, y: scene.player.y },
+      inventory: JSON.parse(JSON.stringify(GameState.inventory)),
+      abilities: JSON.parse(JSON.stringify(GameState.abilities)),
+      quests: JSON.parse(JSON.stringify(GameState.quests)),
+      bosses: JSON.parse(JSON.stringify(GameState.bosses)),
+      mapData: JSON.parse(JSON.stringify(GameState.mapData))
+    };
+  }
+
+  static save(slot, scene) {
+    const snap = SaveSystem.createSnapshot(scene);
+    localStorage.setItem("mv_save_" + slot, JSON.stringify(snap));
+    scene.showStatus("Game Saved");
+  }
+
+  static load(slot, scene) {
+    const raw = localStorage.getItem("mv_save_" + slot);
+    if (!raw) {
+      scene.showStatus("No save in this slot");
+      return;
+    }
+    const data = JSON.parse(raw);
+    SaveSystem.applySnapshot(data, scene);
+    scene.showStatus("Game Loaded");
+  }
+
+  static applySnapshot(data, scene) {
+    GameState.health = data.health;
+    GameState.maxHealth = data.maxHealth;
+    GameState.soul = data.soul;
+    GameState.geo = data.geo;
+    GameState.inventory = data.inventory;
+    GameState.abilities = data.abilities;
+    GameState.quests = data.quests;
+    GameState.bosses = data.bosses;
+    GameState.mapData = data.mapData;
+
+    scene.loadRoom(data.room.row, data.room.col);
+    scene.player.x = data.position.x;
+    scene.player.y = data.position.y;
+  }
+}
+
+// ======================================================
+// 10. FINAL POLISH (TITLE, PAUSE, AUDIO, ENDING)
+// ======================================================
+
+// -----------------------------
+// TITLE SCREEN
+// -----------------------------
+class TitleScene extends Phaser.Scene {
+  constructor() { super("TitleScene"); }
+
+  create() {
+    this.add.text(200, 150, "METROIDVANIA", {
+      font: "40px sans-serif",
+      fill: "#ffffff"
+    });
+
+    this.add.text(260, 260, "Press SPACE to Start", {
+      font: "20px sans-serif",
+      fill: "#cccccc"
+    });
+
+    this.input.keyboard.once("keydown-SPACE", () => {
+      this.scene.start("GameScene");
+    });
+  }
+}
+
+// -----------------------------
+// PAUSE MENU
+// -----------------------------
+class PauseSystem {
+  constructor(scene) {
+    this.scene = scene;
+    this.paused = false;
+
+    this.pauseKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+
+    this.panel = scene.add.rectangle(480, 270, 400, 300, 0x000000, 0.8)
+      .setScrollFactor(0).setDepth(300).setVisible(false);
+
+    this.text = scene.add.text(350, 200, "PAUSED\n\nESC to Resume", {
+      font: "24px sans-serif",
+      fill: "#fff"
+    }).setScrollFactor(0).setDepth(301).setVisible(false);
+  }
+
+  toggle() {
+    this.paused = !this.paused;
+    this.panel.setVisible(this.paused);
+    this.text.setVisible(this.paused);
+
+    if (this.paused) {
+      this.scene.physics.world.pause();
+    } else {
+      this.scene.physics.world.resume();
+    }
+  }
+
+  update() {
+    if (Phaser.Input.Keyboard.JustDown(this.pauseKey)) {
+      this.toggle();
+    }
+  }
+}
+
+// -----------------------------
+// AUDIO SYSTEM
+// -----------------------------
+class AudioSystem {
+  constructor(scene) {
+    this.scene = scene;
+    this.music = null;
+    this.musicVolume = 0.7;
+    this.sfxVolume = 0.9;
+  }
+
+  playMusic(key) {
+    if (this.music) this.music.stop();
+    this.music = this.scene.sound.add(key, { loop: true, volume: this.musicVolume });
+    this.music.play();
+  }
+
+  playSFX(key) {
+    this.scene.sound.play(key, { volume: this.sfxVolume });
+  }
+}
+
+// -----------------------------
+// ENDING + CREDITS
+// -----------------------------
+class EndingSystem {
+  constructor(scene) {
+    this.scene = scene;
+  }
+
+  trigger(endingId) {
+    this.scene.cameras.main.fadeOut(1500, 0, 0, 0);
+    this.scene.time.delayedCall(1600, () => this.showEnding(endingId));
+  }
+
+  showEnding(id) {
+    const text = id === "secret"
+      ? "A SECRET ENDING UNFOLDS..."
+      : "THE JOURNEY ENDS.";
+
+    this.scene.add.text(200, 200, text, {
+      font: "32px sans-serif",
+      fill: "#fff"
+    });
+
+    this.scene.time.delayedCall(3000, () => this.showCredits());
+  }
+
+  showCredits() {
+    const credits = this.scene.add.text(200, 600, "CREDITS\n\nDeveloper: You", {
+      font: "24px sans-serif",
+      fill: "#fff"
+    });
+
+    this.scene.tweens.add({
+      targets: credits,
+      y: -200,
+      duration: 8000,
+      ease: "Linear",
+      onComplete: () => this.scene.scene.start("TitleScene")
+    });
+  }
+}
+
+
