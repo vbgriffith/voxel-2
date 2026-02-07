@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hollow Knight Type Game (SVG Upgrade)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+  <style>
+    body { margin: 0; background: #05060a; overflow: hidden; }
+    canvas { display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+
+<script>
+/* -------------------------------------------------------
+   SVG TEXTURES (64×64)
+------------------------------------------------------- */
+
+/* Minimalist Hollow‑Knight‑Inspired Player (64×64)
+   - White mask
+   - Smooth horns
+   - Black cloak
+*/
+const PLAYER_SVG = `
+<svg width="64" height="64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mask -->
+  <ellipse cx="32" cy="22" rx="14" ry="16" fill="white"/>
+  <!-- Horns -->
+  <path d="M18 10 C10 0, 6 14, 14 22" fill="white"/>
+  <path d="M46 10 C54 0, 58 14, 50 22" fill="white"/>
+  <!-- Eyes -->
+  <circle cx="26" cy="22" r="4" fill="black"/>
+  <circle cx="38" cy="22" r="4" fill="black"/>
+  <!-- Cloak -->
+  <path d="M16 32 Q32 60 48 32 Q32 40 16 32" fill="black"/>
+</svg>`;
+
+/* Minimalist Cavern Stone Tile (64×32)
+   - Soft bevel
+   - Subtle shading
+*/
+const TILE_SVG = `
+<svg width="64" height="32" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="32" fill="#3a3a3a"/>
+  <rect width="64" height="32" fill="none" stroke="#555" stroke-width="3"/>
+  <rect width="64" height="32" fill="none" stroke="#222" stroke-width="1"/>
+</svg>`;
+
+
+/* -------------------------------------------------------
+   GAME CONFIG
+------------------------------------------------------- */
+
+const GAME_WIDTH = 960;
+const GAME_HEIGHT = 540;
+
+let cursors, attackKey, dashKey;
+
+class MainScene extends Phaser.Scene {
+  constructor() { super('MainScene'); }
+
+  preload() {
+    this.svgTexture('player', PLAYER_SVG, 64, 64);
+    this.svgTexture('tile', TILE_SVG, 64, 32);
+  }
+
+  create() {
+    cursors = this.input.keyboard.createCursorKeys();
+    attackKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    dashKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+
+    this.physics.world.setBounds(0, 0, 4000, 2000);
+
+    this.platforms = this.physics.add.staticGroup();
+    this.createLevel();
+
+    this.player = this.physics.add.sprite(200, 200, 'player');
+    this.player.setCollideWorldBounds(true);
+    this.player.setSize(24, 40).setOffset(20, 12);
+
+    this.playerState = {
+      canDoubleJump: true,
+      isDashing: false,
+      dashTime: 0,
+      dashCooldown: 0,
+      facing: 1,
+      isAttacking: false,
+      attackTime: 0
+    };
+
+    this.attackHitbox = this.physics.add.sprite(this.player.x, this.player.y, null);
+    this.attackHitbox.body.setAllowGravity(false);
+    this.attackHitbox.setSize(40, 20);
+    this.attackHitbox.setVisible(false);
+
+    this.physics.add.collider(this.player, this.platforms);
+
+    this.cameras.main.setBounds(0, 0, 4000, 2000);
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    this.cameras.main.setZoom(2);
+
+    this.enemies = this.physics.add.group();
+    for (let i = 0; i < 5; i++) {
+      const e = this.enemies.create(600 + i * 200, 100, 'player');
+      e.setTint(0x4444ff);
+      e.setImmovable(true);
+      e.body.setAllowGravity(false);
+    }
+
+    this.physics.add.overlap(
+      this.attackHitbox,
+      this.enemies,
+      (hitbox, enemy) => enemy.disableBody(true, true),
+      null,
+      this
+    );
+  }
+
+  update(time, delta) {
+    const dt = delta / 1000;
+    this.handleMovement(dt);
+    this.handleJump();
+    this.handleDash(dt);
+    this.handleAttack(dt);
+  }
+
+  createLevel() {
+    for (let x = 0; x < 4000; x += 64)
+      this.platforms.create(x + 32, 520, 'tile').refreshBody();
+
+    const platData = [
+      { x: 400, y: 420 }, { x: 600, y: 360 }, { x: 800, y: 300 },
+      { x: 1100, y: 380 }, { x: 1400, y: 320 }, { x: 1700, y: 260 },
+      { x: 2100, y: 340 }, { x: 2500, y: 280 }, { x: 2900, y: 360 },
+      { x: 3300, y: 300 }
+    ];
+
+    platData.forEach(p =>
+      this.platforms.create(p.x, p.y, 'tile').refreshBody()
+    );
+  }
+
+  handleMovement(dt) {
+    const speed = 260;
+    const body = this.player.body;
+
+    if (this.playerState.isDashing) return;
+
+    if (cursors.left.isDown) {
+      body.setVelocityX(-speed);
+      this.playerState.facing = -1;
+      this.player.setFlipX(true);
+    } else if (cursors.right.isDown) {
+      body.setVelocityX(speed);
+      this.playerState.facing = 1;
+      this.player.setFlipX(false);
+    } else {
+      body.setVelocityX(0);
+    }
+  }
+
+  handleJump() {
+    const body = this.player.body;
+    const onGround = body.blocked.down;
+
+    if (onGround) this.playerState.canDoubleJump = true;
+
+    if (Phaser.Input.Keyboard.JustDown(cursors.up)) {
+      if (onGround) body.setVelocityY(-550);
+      else if (this.playerState.canDoubleJump) {
+        body.setVelocityY(-520);
+        this.playerState.canDoubleJump = false;
+      }
+    }
+  }
+
+  handleDash(dt) {
+    const body = this.player.body;
+
+    if (this.playerState.dashCooldown > 0)
+      this.playerState.dashCooldown -= dt;
+
+    if (!this.playerState.isDashing) {
+      if (Phaser.Input.Keyboard.JustDown(dashKey) &&
+          this.playerState.dashCooldown <= 0) {
+
+        this.playerState.isDashing = true;
+        this.playerState.dashTime = 0.18;
+        this.playerState.dashCooldown = 0.6;
+
+        const dashSpeed = 650 * this.playerState.facing;
+        body.setVelocityX(dashSpeed);
+        body.setVelocityY(0);
+      }
+    } else {
+      this.playerState.dashTime -= dt;
+      if (this.playerState.dashTime <= 0)
+        this.playerState.isDashing = false;
+    }
+  }
+
+  handleAttack(dt) {
+    if (!this.playerState.isAttacking &&
+        Phaser.Input.Keyboard.JustDown(attackKey)) {
+
+      this.playerState.isAttacking = true;
+      this.playerState.attackTime = 0.18;
+
+      const offsetX = this.playerState.facing * 30;
+      this.attackHitbox.setPosition(this.player.x + offsetX, this.player.y);
+      this.attackHitbox.setVisible(true);
+    }
+
+    if (this.playerState.isAttacking) {
+      this.playerState.attackTime -= dt;
+
+      const offsetX = this.playerState.facing * 30;
+      this.attackHitbox.setPosition(this.player.x + offsetX, this.player.y);
+
+      if (this.playerState.attackTime <= 0) {
+        this.playerState.isAttacking = false;
+        this.attackHitbox.setVisible(false);
+      }
+    }
+  }
+
+  svgTexture(key, svg, w, h) {
+    const img = new Image();
+    const blob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+
+    img.onload = () => {
+      this.textures.addImage(key, img);
+      URL.revokeObjectURL(url);
+    };
+
+    img.src = url;
+  }
+}
+
+new Phaser.Game({
+  type: Phaser.AUTO,
+  width: GAME_WIDTH,
+  height: GAME_HEIGHT,
+  physics: {
+    default: 'arcade',
+    arcade: { gravity: { y: 1400 }, debug: false }
+  },
+  pixelArt: true,
+  backgroundColor: '#05060a',
+  scene: [MainScene]
+});
+</script>
+
+</body>
+</html>
