@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FEZ-ish 8-Bit Polished</title>
+<style>
+  body { margin:0; background:#000; overflow:hidden; }
+  canvas { image-rendering: pixelated; }
+
+  #dialog {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%) translateY(20px);
+    width: 260px;
+    padding: 8px;
+    background: #111;
+    border: 4px solid #fff;
+    color: #fff;
+    font-family: monospace;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity .2s, transform .2s;
+  }
+
+  #dialog.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  #hint {
+    position: fixed;
+    top: 6px;
+    left: 6px;
+    color: #666;
+    font-family: monospace;
+    font-size: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div id="hint">← → move • space jump • R rotate • E talk</div>
+<div id="dialog"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r155/three.min.js"></script>
+<script>
+/* ========= AUDIO ========= */
+
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioCtx();
+const master = audioCtx.createGain();
+master.gain.value = 0.15;
+master.connect(audioCtx.destination);
+
+/* --- SFX --- */
+function bleep(freq=600, dur=0.05){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "square";
+  o.frequency.value = freq;
+  g.gain.value = 0.25;
+  o.connect(g).connect(master);
+  o.start();
+  o.stop(audioCtx.currentTime + dur);
+}
+
+/* --- MUSIC --- */
+
+let musicStarted = false;
+const tempo = 120;
+const stepTime = 60 / tempo / 2;
+let step = 0;
+
+/* NES-ish scale */
+const melody = [
+  523, 659, 783, 659,
+  523, 392, 440, 392
+];
+
+const bass = [
+  131, 131, 165, 131,
+  98,  98,  131, 98
+];
+
+function playNote(freq, length, vol=0.12) {
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "square";
+  o.frequency.value = freq;
+  g.gain.value = vol;
+  o.connect(g).connect(master);
+  o.start();
+  o.stop(audioCtx.currentTime + length);
+}
+
+function musicLoop() {
+  if (!musicStarted) return;
+
+  playNote(melody[step % melody.length], stepTime * 0.9, 0.08);
+  if (step % 2 === 0) {
+    playNote(bass[step % bass.length], stepTime * 1.8, 0.05);
+  }
+
+  step++;
+  setTimeout(musicLoop, stepTime * 1000);
+}
+
+/* Start music on first interaction */
+addEventListener("keydown", () => {
+  if (!musicStarted) {
+    audioCtx.resume();
+    musicStarted = true;
+    musicLoop();
+  }
+}, { once:true });
+
+/* ========= RENDER ========= */
+
+const W=320,H=180;
+const renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(W,H);
+renderer.domElement.style.width=innerWidth+"px";
+renderer.domElement.style.height=innerHeight+"px";
+document.body.appendChild(renderer.domElement);
+
+addEventListener("resize",()=>{
+  renderer.domElement.style.width=innerWidth+"px";
+  renderer.domElement.style.height=innerHeight+"px";
+});
+
+/* ========= SCENE ========= */
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x000000);
+
+const camera=new THREE.OrthographicCamera(-8,8,4.5,-4.5,0.1,100);
+camera.position.set(8,8,8);
+camera.lookAt(0,0,0);
+
+scene.add(new THREE.AmbientLight(0xffffff,1));
+
+/* ========= PALETTE ========= */
+
+const PAL={tile:0x4fa4ff,player:0xffffff,npc:0xffcc00};
+
+/* ========= WORLD ========= */
+
+let world=new THREE.Group();
+scene.add(world);
+
+const tileGeo=new THREE.BoxGeometry(1,1,1);
+const tileMat=new THREE.MeshBasicMaterial({color:PAL.tile});
+
+/* ========= CHARACTERS ========= */
+
+function character(color){
+  const g=new THREE.Group();
+  const m=new THREE.MeshBasicMaterial({color});
+  [[0,0,0],[0,1,0],[-.5,0,0],[.5,0,0]].forEach(p=>{
+    const c=new THREE.Mesh(new THREE.BoxGeometry(.6,.6,.6),m);
+    c.position.set(...p);
+    g.add(c);
+  });
+  return g;
+}
+
+/* ========= PLAYER ========= */
+
+const player=character(PAL.player);
+scene.add(player);
+
+let vy=0,onGround=false,coyote=0;
+
+/* ========= UI ========= */
+
+const dialog=document.getElementById("dialog");
+let dialogQ=[],dialogOn=false,typing=null;
+
+function showDialog(lines){
+  dialogQ=[...lines];
+  dialogOn=true;
+  dialog.classList.add("show");
+  typeLine();
+}
+
+function typeLine(){
+  let text=dialogQ.shift(),i=0;
+  dialog.textContent="";
+  clearInterval(typing);
+  typing=setInterval(()=>{
+    dialog.textContent+=text[i++];
+    bleep(900,0.01);
+    if(i>=text.length) clearInterval(typing);
+  },25);
+}
+
+function nextDialog(){
+  if(!dialogOn) return;
+  if(dialogQ.length===0){
+    dialog.classList.remove("show");
+    dialogOn=false;
+  } else typeLine();
+}
+
+/* ========= INPUT ========= */
+
+const keys={};
+addEventListener("keydown",e=>{
+  keys[e.key]=true;
+  if(e.key==="r"){ targetRot+=Math.PI/2; bleep(300,0.1); }
+  if(e.key==="Enter") nextDialog();
+});
+addEventListener("keyup",e=>keys[e.key]=false);
+
+/* ========= LEVEL ========= */
+
+[[0,-2,0],[1,-2,0],[2,-2,0]].forEach(t=>{
+  const tile=new THREE.Mesh(tileGeo,tileMat);
+  tile.position.set(...t);
+  world.add(tile);
+});
+
+const npc=character(PAL.npc);
+npc.position.set(1,-1,0);
+npc.userData.dialog=[
+  "LISTEN TO THE WORLD.",
+  "EVERY PIXEL HAS A VOICE."
+];
+world.add(npc);
+
+/* ========= ROTATION ========= */
+
+let rot=0,targetRot=0;
+
+/* ========= LOOP ========= */
+
+function update(t){
+  rot+=(targetRot-rot)*0.1;
+  world.rotation.y=rot;
+
+  if(!dialogOn){
+    if(keys["ArrowLeft"]) player.position.x-=0.05;
+    if(keys["ArrowRight"]) player.position.x+=0.05;
+  }
+
+  vy-=0.02;
+  player.position.y+=vy;
+
+  if(player.position.y<-1){
+    player.position.y=-1;
+    vy=0;
+    onGround=true;
+    coyote=6;
+  } else coyote--;
+
+  if(keys[" "]&&(onGround||coyote>0)){
+    vy=0.35;
+    coyote=0;
+    bleep(1000);
+  }
+
+  if(keys["e"]&&player.position.distanceTo(npc.position)<1){
+    showDialog(npc.userData.dialog);
+  }
+
+  renderer.render(scene,camera);
+  requestAnimationFrame(update);
+}
+update(0);
+</script>
+</body>
+</html>
