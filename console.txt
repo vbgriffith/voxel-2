@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mini DevTools</title>
+<style>
+  body { margin:0; font-family:sans-serif; display:flex; height:100vh; overflow:hidden; }
+  #inspector, #console { flex:1; border-right:1px solid #ccc; display:flex; flex-direction:column; }
+  #console { border-right:none; }
+  #consoleOutput { flex:1; background:#1e1e1e; color:#fff; padding:5px; overflow:auto; font-family:monospace; }
+  #consoleInput { height:100px; }
+  #domTree { flex:1; background:#f5f5f5; padding:5px; overflow:auto; font-family:monospace; }
+  #domTree span { cursor:pointer; }
+  .highlight { outline:2px solid red; }
+</style>
+
+<!-- CDN Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.14/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+</head>
+<body>
+
+<div id="inspector">
+  <h3>Inspector</h3>
+  <div id="domTree"></div>
+</div>
+
+<div id="console">
+  <h3>Console</h3>
+  <div id="consoleOutput"></div>
+  <textarea id="consoleInput"></textarea>
+</div>
+
+<script>
+$(function() {
+  // --- Console functionality ---
+  const $consoleOutput = $('#consoleOutput');
+  const editor = CodeMirror.fromTextArea(document.getElementById('consoleInput'), {
+    mode: "javascript",
+    lineNumbers: true,
+    theme: "default"
+  });
+
+  function logToConsole(type, msg) {
+    $consoleOutput.append('<div style="color:' + (type==='error'?'red':'white') + ';">' + _.escape(msg) + '</div>');
+    $consoleOutput.scrollTop($consoleOutput[0].scrollHeight);
+  }
+
+  // Override console
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = function(...args) { originalLog.apply(console, args); logToConsole('log', args.join(' ')); }
+  console.error = function(...args) { originalError.apply(console, args); logToConsole('error', args.join(' ')); }
+
+  // Execute JS on Ctrl+Enter
+  editor.on('keydown', function(cm, e) {
+    if(e.ctrlKey && e.key === 'Enter') {
+      try {
+        const result = eval(cm.getValue());
+        console.log(result);
+      } catch(err) {
+        console.error(err);
+      }
+      e.preventDefault();
+    }
+  });
+
+  // --- Inspector functionality ---
+  const $domTree = $('#domTree');
+
+  function buildDomTree(el, container) {
+    const $el = $('<span>').text('<' + el.tagName.toLowerCase() + '>').appendTo(container);
+    $el.on('click', e => {
+      e.stopPropagation();
+      $('*').removeClass('highlight');
+      $(el).addClass('highlight');
+      console.log('Selected element:', el);
+    });
+    if(el.children.length) {
+      const $childContainer = $('<div>').css({marginLeft:'15px'});
+      $childContainer.appendTo(container);
+      _.forEach(el.children, child => buildDomTree(child, $childContainer));
+    }
+  }
+
+  function refreshDomTree() {
+    $domTree.empty();
+    buildDomTree(document.body, $domTree);
+  }
+
+  refreshDomTree();
+  // Update tree on DOM changes
+  const observer = new MutationObserver(refreshDomTree);
+  observer.observe(document.body, {childList:true, subtree:true});
+});
+</script>
+
+</body>
+</html>
