@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FEZ-ish 8-Bit Full Prototype</title>
+<style>
+body { margin:0; background:#000; overflow:hidden; }
+canvas { image-rendering: pixelated; }
+
+#dialog, #objective, #hint, #fade {
+  position: fixed; font-family: monospace; font-size: 12px; color:#fff;
+  padding: 6px; background:#111; border: 3px solid #fff;
+  transition: opacity .3s;
+}
+
+#dialog { left:50%; bottom:12px; transform:translateX(-50%) translateY(20px); width:280px; opacity:0; }
+#dialog.show { opacity:1; transform:translateX(-50%) translateY(0); }
+
+#objective { top:6px; right:6px; width:200px; text-align:right; }
+#hint { top:6px; left:6px; font-size:10px; color:#888; }
+#fade { inset:0; opacity:0; pointer-events:none; transition:opacity .5s; background:#000; }
+</style>
+</head>
+<body>
+
+<div id="hint">← → move • space jump • R rotate • E interact</div>
+<div id="objective"></div>
+<div id="dialog"></div>
+<div id="fade"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r155/three.min.js"></script>
+<script>
+/* ========= AUDIO ========= */
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioCtx();
+const master = audioCtx.createGain();
+master.gain.value = 0.15; master.connect(audioCtx.destination);
+function bleep(freq=600,dur=0.05){
+  const o=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  o.type="square"; o.frequency.value=freq;
+  g.gain.value=0.25; o.connect(g).connect(master);
+  o.start(); o.stop(audioCtx.currentTime+dur);
+}
+
+/* ========= RENDER ========= */
+const W=320,H=180;
+const renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(W,H);
+renderer.domElement.style.width=innerWidth+"px";
+renderer.domElement.style.height=innerHeight+"px";
+document.body.appendChild(renderer.domElement);
+addEventListener("resize",()=>{ renderer.domElement.style.width=innerWidth+"px"; renderer.domElement.style.height=innerHeight+"px"; });
+
+/* ========= SCENE ========= */
+const scene=new THREE.Scene();
+const camera=new THREE.OrthographicCamera(-8,8,4.5,-4.5,0.1,100);
+camera.position.set(8,8,8); camera.lookAt(0,0,0);
+scene.add(new THREE.AmbientLight(0xffffff,1));
+
+/* ========= PALETTES ========= */
+const PALETTES=[
+  {sky:0x1b2d5c,tile:0x4fa4ff,bg:0x0a0a0a},
+  {sky:0x2d1b3d,tile:0xff77aa,bg:0x111111},
+  {sky:0x16332a,tile:0x66ff99,bg:0x050505}
+];
+
+/* ========= WORLD ========= */
+let world=new THREE.Group();
+scene.add(world);
+const tileGeo=new THREE.BoxGeometry(1,1,1);
+
+/* ========= CHARACTERS ========= */
+function character(color){
+  const g=new THREE.Group();
+  const m=new THREE.MeshBasicMaterial({color});
+  [[0,0,0],[0,1,0],[-.5,0,0],[.5,0,0]].forEach(p=>{
+    const c=new THREE.Mesh(new THREE.BoxGeometry(.6,.6,.6),m);
+    c.position.set(...p); g.add(c);
+  });
+  return g;
+}
+
+/* ========= PLAYER ========= */
+const player=character(0xffffff);
+scene.add(player);
+let vy=0,onGround=false,coyote=0;
+
+/* ========= UI ========= */
+const dialog=document.getElementById("dialog");
+const objectiveUI=document.getElementById("objective");
+const fade=document.getElementById("fade");
+let dialogQ=[],dialogOn=false;
+
+function showDialog(lines){
+  dialogQ=[...lines]; dialogOn=true; dialog.classList.add("show"); dialog.textContent=dialogQ.shift();
+}
+function nextDialog(){ if(dialogQ.length===0){ dialog.classList.remove("show"); dialogOn=false; } else dialog.textContent=dialogQ.shift(); }
+
+/* ========= INPUT ========= */
+const keys={};
+addEventListener("keydown",e=>{
+  keys[e.key]=true;
+  if(e.key==="r"){ targetRot+=Math.PI/2; bleep(300,0.1); }
+  if(e.key==="Enter") nextDialog();
+});
+addEventListener("keyup",e=>keys[e.key]=false);
+
+/* ========= LEVELS ========= */
+const levels=[
+{objective:"TALK TO THE ELDER",
+ tiles:[[0,-2,0],[1,-2,0],[2,-2,0]],
+ npc:{pos:[1,-1,0],dialog:["WELCOME, TRAVELER.","ROTATE TO SEE TRUTH."]}, goal:()=>talked },
+{objective:"REACH THE GLYPH",
+ tiles:[[0,-2,0],[1,-2,0],[2,-2,0],[3,-2,0]], glyph:[3,-1,0] },
+{objective:"ALIGN PATHS",
+ tiles:[[0,-2,0],[1,-2,0],[1,-1,0],[2,-1,0]],
+ glyph:[2,0,0] },
+{objective:"ASCEND",
+ tiles:[[0,-2,0],[0,-1,0],[0,0,0],[1,0,0]], goal:()=>player.position.y>1 }
+];
+let levelIndex=0,talked=false;
+
+/* ========= LOAD LEVEL ========= */
+function loadLevel(i){
+  world.clear(); talked=false;
+  const pal=PALETTES[i%PALETTES.length];
+  scene.background=new THREE.Color(pal.sky);
+  const tileMat=new THREE.MeshBasicMaterial({color:pal.tile});
+  levels[i].tiles.forEach(t=>{
+    const tile=new THREE.Mesh(tileGeo,tileMat);
+    tile.position.set(...t); world.add(tile);
+  });
+  if(levels[i].npc){
+    const npc=character(0xffcc00);
+    npc.position.set(...levels[i].npc.pos);
+    npc.userData.dialog=levels[i].npc.dialog;
+    world.add(npc); levels[i].npc.ref=npc;
+  }
+  if(levels[i].glyph){
+    const g=new THREE.Mesh(new THREE.BoxGeometry(.5,.5,.5),new THREE.MeshBasicMaterial({color:0xffff00}));
+    g.position.set(...levels[i].glyph); world.add(g); levels[i].glyphRef=g;
+  }
+  player.position.set(0,-1,0);
+  objectiveUI.textContent=levels[i].objective;
+}
+
+/* ========= ROTATION ========= */
+let rot=0,targetRot=0;
+
+/* ========= LOOP ========= */
+function update(){
+  rot+=(targetRot-rot)*0.1; world.rotation.y=rot;
+  if(!dialogOn){
+    if(keys["ArrowLeft"]) player.position.x-=0.05;
+    if(keys["ArrowRight"]) player.position.x+=0.05;
+  }
+  vy-=0.02; player.position.y+=vy;
+  if(player.position.y<-1){ player.position.y=-1; vy=0; onGround=true; coyote=6; } else coyote--;
+  if(keys[" "]&&(onGround||coyote>0)){ vy=0.35; coyote=0; bleep(900); }
+
+  const lvl=levels[levelIndex];
+  if(lvl.npc && keys["e"] && player.position.distanceTo(lvl.npc.ref.position)<1){
+    showDialog(lvl.npc.dialog); talked=true;
+  }
+  if(lvl.glyphRef && player.position.distanceTo(lvl.glyphRef.position)<0.7){ bleep(1200,0.2); nextLevel(); }
+  if(lvl.goal && lvl.goal()){ nextLevel(); }
+
+  renderer.render(scene,camera);
+  requestAnimationFrame(update);
+}
+
+function nextLevel(){
+  fade.style.opacity=1;
+  setTimeout(()=>{
+    levelIndex++;
+    if(levelIndex>=levels.length){ showDialog(["YOU HAVE SEEN ALL SIDES.","THANK YOU FOR PLAYING."]); fade.style.opacity=0; return; }
+    loadLevel(levelIndex);
+    fade.style.opacity=0;
+  },500);
+}
+
+/* ========= START ========= */
+loadLevel(0);
+update();
+</script>
+</body>
+</html>
