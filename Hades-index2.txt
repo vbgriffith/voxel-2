@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CycleBreaker — Hades-Inspired Game</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #111;
+      color: #fff;
+      font-family: sans-serif;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- ==========================
+       JSDELIVR & CDN RESOURCES
+       ========================== -->
+  <script src="https://cdn.jsdelivr.net/npm/babylonjs@6.33.0/babylon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/babylonjs-loaders@6.33.0/babylonjs.loaders.min.js"></script>
+
+  <!-- ==========================
+       GAME DATA & ENGINE
+       ========================== -->
+  <script src="data.js"></script>
+  <script src="story.js"></script>
+  <script src="engine.js"></script>
+  <script src="gameplay.js"></script>
+
+  <!-- ==========================
+       AAA POLISH MODULES
+       ========================== -->
+  <script src="graphics.js"></script>
+  <script src="audio.js"></script>
+  <script src="ui.js"></script>
+  <script src="ai.js"></script>
+  <script src="level.js"></script>
+  <script src="story_extra.js"></script>
+  <script src="meta.js"></script>
+
+  <!-- ==========================
+       GAME INITIALIZATION
+       ========================== -->
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const canvas = document.getElementById('gameCanvas');
+      Engine.init(canvas);
+      Gameplay.init();
+      Audio.playMusic('room_theme');
+
+      // Generate first level and enter first room
+      Level.generateLevel(10);
+      Level.enterRoom(0);
+
+      // UI initial setup
+      UI.updateHP(Gameplay.world.player);
+      UI.updateWeapon(Gameplay.world.player.weapon || Data.weapons[0]);
+      UI.updateBoons(Gameplay.world.player.boons);
+
+      // Start main loop
+      Engine.start();
+    });
+  </script>
+</body>
+</html>
