@@ -1,0 +1,182 @@
+/* ============================================================
+   WORLD.JS — PRESENTATION / SCENE BINDING LAYER
+   Project: CYCLEBREAKER
+   Responsibility: Visual world, meshes, camera, sync
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const World = {};
+  window.World = World;
+
+  let scene, engine, camera, light;
+  const entityMap = new Map();
+
+  /* ============================================================
+     INIT SCENE
+     ============================================================ */
+  World.init = function (babylonEngine, babylonScene) {
+    engine = babylonEngine;
+    scene = babylonScene;
+
+    World.createCamera();
+    World.createLighting();
+    World.createArena();
+
+    Engine.Events.on('onRoomStart', World.onRoomStart);
+    Engine.Events.on('onKill', World.onEntityKilled);
+  };
+
+  /* ============================================================
+     CAMERA (HADES STYLE)
+     ============================================================ */
+  World.createCamera = function () {
+    camera = new BABYLON.FreeCamera(
+      'camera',
+      new BABYLON.Vector3(0, 12, -12),
+      scene
+    );
+    camera.setTarget(BABYLON.Vector3.Zero());
+    camera.attachControl(true);
+  };
+
+  /* ============================================================
+     LIGHTING
+     ============================================================ */
+  World.createLighting = function () {
+    light = new BABYLON.HemisphericLight(
+      'light',
+      new BABYLON.Vector3(0, 1, 0),
+      scene
+    );
+    light.intensity = 0.9;
+  };
+
+  /* ============================================================
+     ARENA GEOMETRY
+     ============================================================ */
+  World.createArena = function () {
+    const ground = BABYLON.MeshBuilder.CreateGround(
+      'ground',
+      { width: 20, height: 20 },
+      scene
+    );
+
+    const groundMat = new BABYLON.StandardMaterial('groundMat', scene);
+    groundMat.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.18);
+    ground.material = groundMat;
+
+    // Walls
+    const wallMat = new BABYLON.StandardMaterial('wallMat', scene);
+    wallMat.diffuseColor = new BABYLON.Color3(0.2, 0.2, 0.25);
+
+    const wallData = [
+      [0, 1, 10],
+      [0, 1, -10],
+      [10, 1, 0],
+      [-10, 1, 0]
+    ];
+
+    wallData.forEach(([x, y, z]) => {
+      const wall = BABYLON.MeshBuilder.CreateBox(
+        'wall',
+        { width: 20, height: 2, depth: 0.5 },
+        scene
+      );
+      wall.position.set(x, y, z);
+      if (x !== 0) wall.rotation.y = Math.PI / 2;
+      wall.material = wallMat;
+    });
+  };
+
+  /* ============================================================
+     PLAYER MESH
+     ============================================================ */
+  World.createPlayerMesh = function (player) {
+    const mesh = BABYLON.MeshBuilder.CreateCapsule(
+      'player',
+      { height: 1.6, radius: 0.4 },
+      scene
+    );
+
+    const mat = new BABYLON.StandardMaterial('playerMat', scene);
+    mat.diffuseColor = new BABYLON.Color3(0.8, 0.2, 0.2);
+    mesh.material = mat;
+
+    entityMap.set(player, mesh);
+  };
+
+  /* ============================================================
+     ENEMY MESH
+     ============================================================ */
+  World.createEnemyMesh = function (enemy) {
+    const mesh = BABYLON.MeshBuilder.CreateBox(
+      `enemy-${enemy.id}`,
+      { size: 1 },
+      scene
+    );
+
+    const mat = new BABYLON.StandardMaterial('enemyMat', scene);
+    mat.diffuseColor = new BABYLON.Color3(0.2, 0.6, 0.9);
+    mesh.material = mat;
+
+    entityMap.set(enemy, mesh);
+  };
+
+  /* ============================================================
+     ROOM ENTRY
+     ============================================================ */
+  World.onRoomStart = function ({ room }) {
+    // Clear old meshes
+    entityMap.forEach(mesh => mesh.dispose());
+    entityMap.clear();
+
+    // Player
+    const player = Gameplay.world.player;
+    World.createPlayerMesh(player);
+
+    // Enemies
+    room.enemies.forEach(enemy => {
+      World.createEnemyMesh(enemy);
+    });
+  };
+
+  /* ============================================================
+     ENTITY REMOVAL
+     ============================================================ */
+  World.onEntityKilled = function ({ target }) {
+    const mesh = entityMap.get(target);
+    if (mesh) {
+      mesh.dispose();
+      entityMap.delete(target);
+    }
+  };
+
+  /* ============================================================
+     FRAME UPDATE
+     ============================================================ */
+  World.update = function () {
+    // Sync all entity positions
+    entityMap.forEach((mesh, entity) => {
+      mesh.position.x = entity.pos.x;
+      mesh.position.z = entity.pos.z;
+    });
+
+    // Camera follow player
+    const player = Gameplay.world.player;
+    if (player) {
+      camera.position.x = player.pos.x;
+      camera.position.z = player.pos.z - 12;
+      camera.setTarget(
+        new BABYLON.Vector3(player.pos.x, 0, player.pos.z)
+      );
+    }
+  };
+
+  /* ============================================================
+     ENGINE HOOK
+     ============================================================ */
+  Engine.Events.on('onFrame', World.update);
+
+})();
