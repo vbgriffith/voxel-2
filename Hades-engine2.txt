@@ -1,0 +1,103 @@
+/* ============================================================
+   ENGINE.JS — CORE GAME LOOP & EVENT SYSTEM
+   Project: CYCLEBREAKER
+   Responsibility: Timing, state, events, Babylon lifecycle
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const Engine = {};
+  window.Engine = Engine;
+
+  /* ============================================================
+     EVENT BUS
+     ============================================================ */
+  Engine.Events = {
+    events: {},
+    on(event, fn) {
+      if (!this.events[event]) this.events[event] = [];
+      this.events[event].push(fn);
+    },
+    emit(event, data) {
+      if (!this.events[event]) return;
+      this.events[event].forEach(fn => fn(data));
+    }
+  };
+
+  /* ============================================================
+     ENGINE STATE
+     ============================================================ */
+  Engine.State = {
+    current: null,
+    set(state) {
+      if (this.current && this.current.exit) {
+        this.current.exit();
+      }
+      this.current = state;
+      if (this.current && this.current.enter) {
+        this.current.enter();
+      }
+    },
+    update(delta) {
+      if (this.current && this.current.update) {
+        this.current.update(delta);
+      }
+    },
+    render() {
+      if (this.current && this.current.render) {
+        this.current.render();
+      }
+    }
+  };
+
+  /* ============================================================
+     PUBLIC REFERENCES
+     ============================================================ */
+  Engine.engine = null;
+  Engine.scene = null;
+  Engine.canvas = null;
+
+  /* ============================================================
+     RUN ENGINE
+     ============================================================ */
+  Engine.run = function (canvas) {
+    Engine.canvas = canvas;
+
+    // Create Babylon engine & scene
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    // Expose globally
+    Engine.engine = engine;
+    Engine.scene = scene;
+
+    // Notify systems (World, Graphics, etc.)
+    Engine.Events.emit('onSceneReady', { engine, scene });
+
+    let lastTime = performance.now();
+
+    engine.runRenderLoop(() => {
+      const now = performance.now();
+      const delta = (now - lastTime) / 16.666; // normalize to ~60fps
+      lastTime = now;
+
+      // Update game logic
+      Engine.State.update(delta);
+
+      // Global per-frame hooks (World sync, camera, etc.)
+      Engine.Events.emit('onFrame', delta);
+
+      // Render state-specific visuals if any
+      Engine.State.render();
+
+      scene.render();
+    });
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      engine.resize();
+    });
+  };
+
+})();
