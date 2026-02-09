@@ -1,0 +1,330 @@
+/* ============================================================
+   ENGINE.JS — CORE RUNTIME
+   Project: CYCLEBREAKER
+   Responsibility: HOW the game runs (not what the game is)
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  /* ============================================================
+     GLOBAL ENGINE NAMESPACE
+     ============================================================ */
+  const Engine = {};
+  window.Engine = Engine;
+
+  /* ============================================================
+     CONFIG & CONSTANTS
+     ============================================================ */
+  const CONFIG = {
+    TARGET_FPS: 60,
+    FIXED_TIMESTEP: 1000 / 60,
+    MAX_DELTA: 50,
+    INPUT_BUFFER_MS: 150,
+    DEBUG: false
+  };
+
+  /* ============================================================
+     TIME MANAGEMENT
+     ============================================================ */
+  Engine.Time = {
+    now: 0,
+    delta: 0,
+    accumulator: 0,
+    scale: 1
+  };
+
+  /* ============================================================
+     EVENT BUS (LIGHTWEIGHT)
+     ============================================================ */
+  Engine.Events = (() => {
+    const listeners = {};
+
+    return {
+      on(event, fn) {
+        (listeners[event] ||= []).push(fn);
+      },
+      off(event, fn) {
+        if (!listeners[event]) return;
+        listeners[event] = listeners[event].filter(f => f !== fn);
+      },
+      emit(event, data) {
+        if (!listeners[event]) return;
+        for (const fn of listeners[event]) fn(data);
+      },
+      clear() {
+        for (const k in listeners) delete listeners[k];
+      }
+    };
+  })();
+
+  /* ============================================================
+     INPUT SYSTEM (KEYBOARD-FIRST)
+     ============================================================ */
+  Engine.Input = (() => {
+    const keys = {};
+    const buffer = [];
+
+    window.addEventListener('keydown', e => {
+      if (keys[e.code]) return;
+      keys[e.code] = Engine.Time.now;
+      buffer.push({ code: e.code, time: Engine.Time.now });
+    });
+
+    window.addEventListener('keyup', e => {
+      delete keys[e.code];
+    });
+
+    function isDown(code) {
+      return keys[code] !== undefined;
+    }
+
+    function wasPressed(code) {
+      const now = Engine.Time.now;
+      for (let i = buffer.length - 1; i >= 0; i--) {
+        const b = buffer[i];
+        if (b.code === code && now - b.time <= CONFIG.INPUT_BUFFER_MS) {
+          buffer.splice(i, 1);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function clear() {
+      buffer.length = 0;
+    }
+
+    return { isDown, wasPressed, clear };
+  })();
+
+  /* ============================================================
+     ECS-LITE (ENTITY / COMPONENT)
+     ============================================================ */
+  let ENTITY_ID = 1;
+
+  class Entity {
+    constructor() {
+      this.id = ENTITY_ID++;
+      this.components = {};
+      this.active = true;
+    }
+    add(name, component) {
+      this.components[name] = component;
+      return this;
+    }
+    get(name) {
+      return this.components[name];
+    }
+    has(name) {
+      return this.components[name] !== undefined;
+    }
+  }
+
+  Engine.ECS = (() => {
+    const entities = new Set();
+
+    function create() {
+      const e = new Entity();
+      entities.add(e);
+      return e;
+    }
+
+    function remove(entity) {
+      entities.delete(entity);
+    }
+
+    function query(...components) {
+      const result = [];
+      for (const e of entities) {
+        if (!e.active) continue;
+        let ok = true;
+        for (const c of components) {
+          if (!e.has(c)) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) result.push(e);
+      }
+      return result;
+    }
+
+    function clear() {
+      entities.clear();
+    }
+
+    return { create, remove, query, clear };
+  })();
+
+  /* ============================================================
+     OBJECT POOLING (PERFORMANCE-CRITICAL)
+     ============================================================ */
+  Engine.Pool = (() => {
+    const pools = {};
+
+    function create(type, factory, size = 32) {
+      pools[type] = [];
+      for (let i = 0; i < size; i++) {
+        pools[type].push(factory());
+      }
+    }
+
+    function acquire(type, factory) {
+      const pool = pools[type] || (pools[type] = []);
+      return pool.length ? pool.pop() : factory();
+    }
+
+    function release(type, obj) {
+      if (!pools[type]) pools[type] = [];
+      pools[type].push(obj);
+    }
+
+    return { create, acquire, release };
+  })();
+
+  /* ============================================================
+     STATE MACHINE
+     ============================================================ */
+  Engine.State = (() => {
+    let current = null;
+
+    function set(state) {
+      if (current && current.exit) current.exit();
+      current = state;
+      if (current && current.enter) current.enter();
+    }
+
+    function update(dt) {
+      if (current && current.update) current.update(dt);
+    }
+
+    function render() {
+      if (current && current.render) current.render();
+    }
+
+    return { set, update, render };
+  })();
+
+  /* ============================================================
+     BABYLON.JS BOOTSTRAP
+     ============================================================ */
+  Engine.Renderer = (() => {
+    let engine, scene, camera;
+
+    function init(canvas) {
+      engine = new BABYLON.Engine(canvas, true, {
+        preserveDrawingBuffer: false,
+        stencil: false
+      });
+
+      scene = new BABYLON.Scene(engine);
+      scene.clearColor = new BABYLON.Color4(0, 0, 0, 1);
+
+      camera = new BABYLON.ArcRotateCamera(
+        'isoCam',
+        Math.PI / 4,
+        Math.PI / 3,
+        25,
+        BABYLON.Vector3.Zero(),
+        scene
+      );
+      camera.attachControl(canvas, false);
+      camera.lowerRadiusLimit = camera.upperRadiusLimit = 25;
+      camera.panningSensibility = 0;
+      camera.wheelPrecision = 999999;
+
+      const light = new BABYLON.HemisphericLight(
+        'light',
+        new BABYLON.Vector3(0, 1, 0),
+        scene
+      );
+      light.intensity = 0.9;
+
+      return { engine, scene, camera };
+    }
+
+    function resize() {
+      engine && engine.resize();
+    }
+
+    return { init, resize };
+  })();
+
+  /* ============================================================
+     CAMERA EFFECTS (SHAKE / ZOOM)
+     ============================================================ */
+  Engine.CameraFX = (() => {
+    let shakeTime = 0;
+    let shakeStrength = 0;
+
+    function shake(strength, duration) {
+      shakeStrength = Math.max(shakeStrength, strength);
+      shakeTime = Math.max(shakeTime, duration);
+    }
+
+    function update(dt, camera) {
+      if (shakeTime > 0) {
+        shakeTime -= dt;
+        const t = shakeTime * 0.1;
+        camera.target.x += (Math.random() - 0.5) * shakeStrength * t;
+        camera.target.z += (Math.random() - 0.5) * shakeStrength * t;
+      }
+    }
+
+    return { shake, update };
+  })();
+
+  /* ============================================================
+     DEBUG OVERLAY
+     ============================================================ */
+  Engine.Debug = (() => {
+    const el = document.getElementById('debug');
+
+    function show(flag) {
+      if (!el) return;
+      el.style.display = flag ? 'block' : 'none';
+    }
+
+    function update(text) {
+      if (!el || !CONFIG.DEBUG) return;
+      el.textContent = text;
+    }
+
+    return { show, update };
+  })();
+
+  /* ============================================================
+     GAME LOOP
+     ============================================================ */
+  Engine.run = function (canvas) {
+    const { engine, scene, camera } = Engine.Renderer.init(canvas);
+    window.addEventListener('resize', Engine.Renderer.resize);
+
+    let last = performance.now();
+
+    function loop(now) {
+      const rawDelta = now - last;
+      last = now;
+
+      const delta = Math.min(rawDelta, CONFIG.MAX_DELTA);
+      Engine.Time.delta = delta;
+      Engine.Time.now = now;
+      Engine.Time.accumulator += delta * Engine.Time.scale;
+
+      while (Engine.Time.accumulator >= CONFIG.FIXED_TIMESTEP) {
+        Engine.State.update(CONFIG.FIXED_TIMESTEP);
+        Engine.Time.accumulator -= CONFIG.FIXED_TIMESTEP;
+      }
+
+      Engine.CameraFX.update(delta, camera);
+      Engine.State.render();
+      scene.render();
+
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+  };
+
+})();
