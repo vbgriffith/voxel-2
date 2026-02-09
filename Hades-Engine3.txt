@@ -1,0 +1,56 @@
+(() => {
+  'use strict';
+
+  const Engine = {};
+  window.Engine = Engine;
+
+  Engine.Events = {
+    events: {},
+    on(e, fn) {
+      (this.events[e] ??= []).push(fn);
+    },
+    emit(e, d) {
+      (this.events[e] || []).forEach(fn => fn(d));
+    }
+  };
+
+  Engine.State = {
+    current: null,
+    set(s) {
+      this.current?.exit?.();
+      this.current = s;
+      this.current?.enter?.();
+    },
+    update(dt) {
+      this.current?.update?.(dt);
+    }
+  };
+
+  Engine.engine = null;
+  Engine.scene = null;
+
+  Engine.run = function (canvas) {
+    const engine = new BABYLON.Engine(canvas, true);
+    const scene = new BABYLON.Scene(engine);
+
+    Engine.engine = engine;
+    Engine.scene = scene;
+
+    Engine.Events.emit('onSceneReady', { engine, scene });
+
+    let last = performance.now();
+
+    engine.runRenderLoop(() => {
+      const now = performance.now();
+      const delta = (now - last) / 16.666;
+      last = now;
+
+      Engine.State.update(delta);
+      Engine.Events.emit('onFrame', delta);
+
+      scene.render();
+    });
+
+    window.addEventListener('resize', () => engine.resize());
+  };
+})();

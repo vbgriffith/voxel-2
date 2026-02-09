@@ -1,0 +1,43 @@
+(() => {
+  'use strict';
+
+  const Gameplay = {};
+  window.Gameplay = Gameplay;
+
+  Gameplay.world = {
+    player: null,
+    enemies: [],
+    traps: []
+  };
+
+  Gameplay.createPlayer = function () {
+    Gameplay.world.player = {
+      ...Data.player,
+      pos: { x: 0, y: 0, z: 0 },
+      hp: Data.player.hp
+    };
+  };
+
+  Engine.Events.on('onSceneReady', () => {
+    if (!Gameplay.world.player) {
+      Gameplay.createPlayer();
+    }
+  });
+
+  Engine.State.set({
+    update(delta) {
+      const p = Gameplay.world.player;
+      if (!p) return;
+
+      const speed = p.speed * delta;
+      if (Input.keys['w']) p.pos.z += speed;
+      if (Input.keys['s']) p.pos.z -= speed;
+      if (Input.keys['a']) p.pos.x -= speed;
+      if (Input.keys['d']) p.pos.x += speed;
+
+      Gameplay.world.enemies.forEach(e => {
+        AI.updateEnemyBehavior(e, p, delta);
+      });
+    }
+  });
+})();

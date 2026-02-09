@@ -1,0 +1,30 @@
+(() => {
+  'use strict';
+
+  const Level = {};
+  window.Level = Level;
+
+  Level.rooms = [];
+
+  Level.generateLevel = function () {
+    Level.rooms = [{
+      id: 0,
+      enemies: [{
+        id: 'e1',
+        pos: { x: 2, z: 2 },
+        hp: 5,
+        speed: 0.02,
+        damage: 1,
+        state: AI.State.IDLE,
+        detectionRange: 5,
+        attackRange: 1
+      }]
+    }];
+  };
+
+  Level.enterRoom = function (id = 0) {
+    const room = Level.rooms[id];
+    Gameplay.world.enemies = room.enemies;
+    Engine.Events.emit('onRoomStart', { room });
+  };
+})();

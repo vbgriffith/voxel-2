@@ -1,0 +1,68 @@
+(() => {
+  'use strict';
+
+  const World = {};
+  window.World = World;
+
+  let scene, camera;
+  const map = new Map();
+
+  Engine.Events.on('onSceneReady', ({ scene: s }) => {
+    scene = s;
+    World.init();
+  });
+
+  World.init = function () {
+    camera = new BABYLON.FreeCamera(
+      'cam',
+      new BABYLON.Vector3(0, 12, -12),
+      scene
+    );
+    camera.setTarget(BABYLON.Vector3.Zero());
+
+    new BABYLON.HemisphericLight(
+      'light',
+      new BABYLON.Vector3(0, 1, 0),
+      scene
+    );
+
+    BABYLON.MeshBuilder.CreateGround(
+      'ground',
+      { width: 20, height: 20 },
+      scene
+    );
+
+    Engine.Events.on('onRoomStart', World.onRoomStart);
+    Engine.Events.on('onFrame', World.update);
+  };
+
+  World.onRoomStart = ({ room }) => {
+    map.forEach(m => m.dispose());
+    map.clear();
+
+    const player = Gameplay.world.player;
+    if (player) {
+      const mesh = BABYLON.MeshBuilder.CreateCapsule('player', {}, scene);
+      map.set(player, mesh);
+    }
+
+    room.enemies.forEach(e => {
+      const mesh = BABYLON.MeshBuilder.CreateBox('enemy', {}, scene);
+      map.set(e, mesh);
+    });
+  };
+
+  World.update = () => {
+    map.forEach((mesh, entity) => {
+      mesh.position.x = entity.pos.x;
+      mesh.position.z = entity.pos.z;
+    });
+
+    const p = Gameplay.world.player;
+    if (p) {
+      camera.position.x = p.pos.x;
+      camera.position.z = p.pos.z - 12;
+      camera.setTarget(new BABYLON.Vector3(p.pos.x, 0, p.pos.z));
+    }
+  };
+})();
