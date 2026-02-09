@@ -1,0 +1,290 @@
+/* ============================================================
+   GAMEPLAY.JS — INTERACTIVE SYSTEMS
+   Project: CYCLEBREAKER
+   Responsibility: WHAT the player and enemies do
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const { ECS, Input, Events, CameraFX, Time } = Engine;
+
+  /* ============================================================
+     GLOBAL GAMEPLAY STATE
+     ============================================================ */
+  const Gameplay = {};
+  window.Gameplay = Gameplay;
+
+  Gameplay.world = {
+    player: null,
+    enemies: [],
+    projectiles: [],
+    roomActive: false,
+    paused: false
+  };
+
+  /* ============================================================
+     UTILITY
+     ============================================================ */
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+
+  function vec2(x = 0, z = 0) {
+    return { x, z };
+  }
+
+  function length(v) {
+    return Math.hypot(v.x, v.z);
+  }
+
+  function normalize(v) {
+    const l = length(v) || 1;
+    v.x /= l;
+    v.z /= l;
+    return v;
+  }
+
+  /* ============================================================
+     DAMAGE SYSTEM
+     ============================================================ */
+  Gameplay.damage = function ({ source, target, amount, type }) {
+    if (!target || target.dead) return;
+
+    target.hp -= amount;
+    CameraFX.shake(0.3, 80);
+    Events.emit('onHit', { source, target, amount, type });
+
+    if (target.hp <= 0) {
+      target.dead = true;
+      Events.emit('onKill', { source, target });
+    }
+  };
+
+  /* ============================================================
+     PLAYER CREATION
+     ============================================================ */
+  Gameplay.createPlayer = function () {
+    const e = ECS.create();
+
+    const player = {
+      hp: 100,
+      maxHp: 100,
+      pos: vec2(),
+      vel: vec2(),
+      speed: 8,
+      dashSpeed: 18,
+      dashTime: 0,
+      dashCooldown: 0,
+      invuln: 0,
+      facing: vec2(1, 0),
+      weapon: null,
+      castAmmo: 3,
+      castCooldown: 0,
+      dead: false
+    };
+
+    e.add('player', player);
+    Gameplay.world.player = player;
+
+    return e;
+  };
+
+  /* ============================================================
+     PLAYER INPUT & MOVEMENT
+     ============================================================ */
+  function updatePlayerMovement(p, dt) {
+    const move = vec2();
+
+    if (Input.isDown('KeyW')) move.z -= 1;
+    if (Input.isDown('KeyS')) move.z += 1;
+    if (Input.isDown('KeyA')) move.x -= 1;
+    if (Input.isDown('KeyD')) move.x += 1;
+
+    if (length(move) > 0) {
+      normalize(move);
+      p.facing.x = move.x;
+      p.facing.z = move.z;
+    }
+
+    if (p.dashTime > 0) {
+      p.dashTime -= dt;
+      p.invuln = 1;
+      p.pos.x += p.facing.x * p.dashSpeed * dt / 1000;
+      p.pos.z += p.facing.z * p.dashSpeed * dt / 1000;
+      return;
+    }
+
+    p.invuln = 0;
+    p.pos.x += move.x * p.speed * dt / 1000;
+    p.pos.z += move.z * p.speed * dt / 1000;
+  }
+
+  /* ============================================================
+     DASH SYSTEM
+     ============================================================ */
+  function tryDash(p) {
+    if (p.dashCooldown > 0 || p.dashTime > 0) return;
+
+    p.dashTime = 120;
+    p.dashCooldown = 400;
+    CameraFX.shake(0.5, 120);
+    Events.emit('onDash', p);
+  }
+
+  /* ============================================================
+     WEAPON EXECUTION (HOOK-BASED)
+     ============================================================ */
+  Gameplay.executeAttack = function (p) {
+    if (!p.weapon) return;
+    Events.emit('onAttack', p);
+
+    for (const enemy of Gameplay.world.enemies) {
+      const dx = enemy.pos.x - p.pos.x;
+      const dz = enemy.pos.z - p.pos.z;
+      const dist = Math.hypot(dx, dz);
+
+      if (dist < p.weapon.range) {
+        Gameplay.damage({
+          source: p,
+          target: enemy,
+          amount: p.weapon.damage,
+          type: 'melee'
+        });
+      }
+    }
+  };
+
+  Gameplay.executeSpecial = function (p) {
+    if (!p.weapon || !p.weapon.special) return;
+    Events.emit('onSpecial', p);
+    p.weapon.special(p);
+  };
+
+  /* ============================================================
+     CAST SYSTEM
+     ============================================================ */
+  Gameplay.cast = function (p) {
+    if (p.castAmmo <= 0 || p.castCooldown > 0) return;
+
+    p.castAmmo--;
+    p.castCooldown = 300;
+    Events.emit('onCast', p);
+
+    for (const enemy of Gameplay.world.enemies) {
+      const dx = enemy.pos.x - p.pos.x;
+      const dz = enemy.pos.z - p.pos.z;
+      if (Math.hypot(dx, dz) < 6) {
+        Gameplay.damage({
+          source: p,
+          target: enemy,
+          amount: 15,
+          type: 'cast'
+        });
+      }
+    }
+  };
+
+  /* ============================================================
+     PLAYER UPDATE
+     ============================================================ */
+  function updatePlayer(p, dt) {
+    updatePlayerMovement(p, dt);
+
+    if (Input.wasPressed('Space')) tryDash(p);
+    if (Input.wasPressed('KeyJ')) Gameplay.executeAttack(p);
+    if (Input.wasPressed('KeyK')) Gameplay.executeSpecial(p);
+    if (Input.wasPressed('KeyL')) Gameplay.cast(p);
+
+    p.dashCooldown = Math.max(0, p.dashCooldown - dt);
+    p.castCooldown = Math.max(0, p.castCooldown - dt);
+  }
+
+  /* ============================================================
+     ENEMY SYSTEM
+     ============================================================ */
+  Gameplay.spawnEnemy = function (x, z) {
+    const e = ECS.create();
+
+    const enemy = {
+      hp: 40,
+      pos: vec2(x, z),
+      speed: 3,
+      attackCooldown: 0,
+      dead: false
+    };
+
+    e.add('enemy', enemy);
+    Gameplay.world.enemies.push(enemy);
+    return e;
+  };
+
+  function updateEnemy(enemy, player, dt) {
+    if (enemy.dead) return;
+
+    const dx = player.pos.x - enemy.pos.x;
+    const dz = player.pos.z - enemy.pos.z;
+    const dist = Math.hypot(dx, dz);
+
+    if (dist > 1.5) {
+      enemy.pos.x += dx / dist * enemy.speed * dt / 1000;
+      enemy.pos.z += dz / dist * enemy.speed * dt / 1000;
+    } else if (enemy.attackCooldown <= 0) {
+      Gameplay.damage({
+        source: enemy,
+        target: player,
+        amount: 8,
+        type: 'enemy'
+      });
+      enemy.attackCooldown = 600;
+    }
+
+    enemy.attackCooldown = Math.max(0, enemy.attackCooldown - dt);
+  }
+
+  /* ============================================================
+     ROOM FLOW
+     ============================================================ */
+  Gameplay.startRoom = function () {
+    Gameplay.world.enemies.length = 0;
+    Gameplay.world.roomActive = true;
+
+    for (let i = 0; i < 5; i++) {
+      Gameplay.spawnEnemy(Math.random() * 8 - 4, Math.random() * 8 - 4);
+    }
+  };
+
+  Gameplay.endRoom = function () {
+    Gameplay.world.roomActive = false;
+  };
+
+  /* ============================================================
+     GAME STATE
+     ============================================================ */
+  Engine.State.set({
+    enter() {
+      Gameplay.createPlayer();
+      Gameplay.startRoom();
+    },
+    update(dt) {
+      const p = Gameplay.world.player;
+      if (!p || p.dead) return;
+
+      updatePlayer(p, dt);
+
+      for (const enemy of Gameplay.world.enemies) {
+        updateEnemy(enemy, p, dt);
+      }
+
+      Gameplay.world.enemies = Gameplay.world.enemies.filter(e => !e.dead);
+
+      if (Gameplay.world.roomActive && Gameplay.world.enemies.length === 0) {
+        Gameplay.endRoom();
+      }
+    },
+    render() {
+      // Rendering handled by engine / Babylon scene
+    }
+  });
+
+})();
