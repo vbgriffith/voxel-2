@@ -1,0 +1,108 @@
+/* ============================================================
+   DATA.JS — GAME DATA DEFINITIONS
+   Project: CYCLEBREAKER
+   Responsibility: Player, weapons, boons, enemy templates
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const Data = {};
+  window.Data = Data;
+
+  /* ============================================================
+     PLAYER DEFAULT STATS
+     ============================================================ */
+  Data.player = {
+    hp: 20,
+    maxHp: 20,
+    speed: 0.1,
+    pos: { x: 0, y: 0, z: 0 },
+    weapon: null,
+    boons: [],
+    model: 'https://cdn.jsdelivr.net/gh/your-repo/models/player.glb',
+    texture: 'https://cdn.jsdelivr.net/gh/your-repo/textures/player.png'
+  };
+
+  /* ============================================================
+     WEAPONS
+     ============================================================ */
+  Data.weapons = [
+    {
+      id: 'sword',
+      name: 'Stygian Blade',
+      damage: 3,
+      attackSpeed: 0.5,
+      range: 1.2,
+      model: 'https://cdn.jsdelivr.net/gh/your-repo/models/sword.glb'
+    },
+    {
+      id: 'spear',
+      name: 'Spear of Fate',
+      damage: 2,
+      attackSpeed: 0.7,
+      range: 2.0,
+      model: 'https://cdn.jsdelivr.net/gh/your-repo/models/spear.glb'
+    },
+    {
+      id: 'bow',
+      name: 'Shadow Bow',
+      damage: 2,
+      attackSpeed: 0.4,
+      range: 5.0,
+      model: 'https://cdn.jsdelivr.net/gh/your-repo/models/bow.glb'
+    }
+  ];
+
+  /* ============================================================
+     BOONS
+     ============================================================ */
+  Data.boons = [
+    { id: 'strength', name: 'Godly Strength', effect: 'Increase damage', icon: 'https://cdn.jsdelivr.net/gh/your-repo/textures/boon_strength.png' },
+    { id: 'speed', name: 'Swift Foot', effect: 'Increase speed', icon: 'https://cdn.jsdelivr.net/gh/your-repo/textures/boon_speed.png' },
+    { id: 'regen', name: 'Divine Regeneration', effect: 'HP regen over time', icon: 'https://cdn.jsdelivr.net/gh/your-repo/textures/boon_regen.png' }
+  ];
+
+  /* ============================================================
+     ENEMY TEMPLATES
+     ============================================================ */
+  Data.enemies = [
+    {
+      id: 'skeleton',
+      name: 'Skeleton Warrior',
+      hp: 5,
+      maxHp: 5,
+      damage: 1,
+      speed: 0.03,
+      detectionRange: 5,
+      attackRange: 1,
+      model: 'https://cdn.jsdelivr.net/gh/your-repo/models/skeleton.glb',
+      texture: 'https://cdn.jsdelivr.net/gh/your-repo/textures/skeleton.png'
+    },
+    {
+      id: 'ghost',
+      name: 'Wraith',
+      hp: 3,
+      maxHp: 3,
+      damage: 2,
+      speed: 0.05,
+      detectionRange: 6,
+      attackRange: 1.5,
+      model: 'https://cdn.jsdelivr.net/gh/your-repo/models/ghost.glb',
+      texture: 'https://cdn.jsdelivr.net/gh/your-repo/textures/ghost.png'
+    },
+    {
+      id: 'boss_hades',
+      name: 'Lord of the Underworld',
+      hp: 50,
+      maxHp: 50,
+      damage: 4,
+      speed: 0.02,
+      detectionRange: 8,
+      attackRange: 2,
+      model: 'https://cdn.jsdelivr.net/gh/your-repo/models/boss_hades.glb',
+      texture: 'https://cdn.jsdelivr.net/gh/your-repo/textures/boss_hades.png'
+    }
+  ];
+
+})();
