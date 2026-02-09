@@ -1,0 +1,143 @@
+/* ============================================================
+   AI.JS — ENEMY BEHAVIOR SYSTEM
+   Project: CYCLEBREAKER
+   Responsibility: Enemy & Boss AI, attack patterns, states
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const AI = {};
+  window.AI = AI;
+
+  /* ============================================================
+     STATE ENUM
+     ============================================================ */
+  AI.State = {
+    IDLE: 'idle',
+    CHASE: 'chase',
+    ATTACK: 'attack',
+    RETREAT: 'retreat'
+  };
+
+  /* ============================================================
+     ENEMY UPDATE
+     ============================================================ */
+  AI.updateEnemyBehavior = function (enemy, player, delta) {
+    switch (enemy.state) {
+      case AI.State.IDLE:
+        if (AI.canSeePlayer(enemy, player)) {
+          enemy.state = AI.State.CHASE;
+        }
+        break;
+
+      case AI.State.CHASE:
+        AI.moveTowards(enemy, player, delta);
+        if (AI.inAttackRange(enemy, player)) {
+          enemy.state = AI.State.ATTACK;
+          enemy.attackCooldown = 0;
+        }
+        break;
+
+      case AI.State.ATTACK:
+        if (enemy.attackCooldown <= 0) {
+          AI.performAttack(enemy, player);
+          enemy.attackCooldown = enemy.attackSpeed || 60;
+        } else {
+          enemy.attackCooldown -= delta;
+        }
+
+        if (!AI.inAttackRange(enemy, player)) {
+          enemy.state = AI.State.CHASE;
+        }
+        break;
+
+      case AI.State.RETREAT:
+        AI.retreat(enemy, player, delta);
+        if (enemy.hp > enemy.maxHp * 0.5) {
+          enemy.state = AI.State.CHASE;
+        }
+        break;
+    }
+  };
+
+  /* ============================================================
+     HELPER FUNCTIONS
+     ============================================================ */
+  AI.canSeePlayer = function (enemy, player) {
+    const dx = player.pos.x - enemy.pos.x;
+    const dz = player.pos.z - enemy.pos.z;
+    const distance = Math.sqrt(dx * dx + dz * dz);
+    return distance < enemy.detectionRange;
+  };
+
+  AI.inAttackRange = function (enemy, player) {
+    const dx = player.pos.x - enemy.pos.x;
+    const dz = player.pos.z - enemy.pos.z;
+    const distance = Math.sqrt(dx * dx + dz * dz);
+    return distance < enemy.attackRange;
+  };
+
+  AI.moveTowards = function (enemy, player, delta) {
+    const dir = { x: player.pos.x - enemy.pos.x, z: player.pos.z - enemy.pos.z };
+    const length = Math.sqrt(dir.x * dir.x + dir.z * dir.z);
+    if (length === 0) return;
+    enemy.pos.x += (dir.x / length) * enemy.speed * delta;
+    enemy.pos.z += (dir.z / length) * enemy.speed * delta;
+  };
+
+  AI.retreat = function (enemy, player, delta) {
+    const dir = { x: enemy.pos.x - player.pos.x, z: enemy.pos.z - player.pos.z };
+    const length = Math.sqrt(dir.x * dir.x + dir.z * dir.z);
+    if (length === 0) return;
+    enemy.pos.x += (dir.x / length) * enemy.speed * delta;
+    enemy.pos.z += (dir.z / length) * enemy.speed * delta;
+  };
+
+  AI.performAttack = function (enemy, player) {
+    const damage = enemy.damage || 1;
+    player.hp -= damage;
+    Engine.Events.emit('onHit', { target: player, amount: damage });
+    Graphics.shake(100, 0.1);
+  };
+
+  /* ============================================================
+     BOSS AI (SIMPLE PHASED SYSTEM)
+     ============================================================ */
+  AI.updateBossBehavior = function (boss, player, delta) {
+    if (!boss.phase) boss.phase = 1;
+
+    // Phase changes based on HP
+    if (boss.hp < boss.maxHp * 0.6 && boss.phase === 1) {
+      boss.phase = 2;
+      AI.bossPhaseChange(boss);
+    }
+    if (boss.hp < boss.maxHp * 0.3 && boss.phase === 2) {
+      boss.phase = 3;
+      AI.bossPhaseChange(boss);
+    }
+
+    AI.updateEnemyBehavior(boss, player, delta);
+
+    // Extra boss abilities per phase
+    if (boss.phase >= 2) {
+      if (Math.random() < 0.01) {
+        AI.bossSpecialAttack(boss, player);
+      }
+    }
+  };
+
+  AI.bossPhaseChange = function (boss) {
+    console.log(`Boss ${boss.id} enters phase ${boss.phase}`);
+    Graphics.shake(300, 0.3);
+    Audio.playSFX('boss_phase');
+  };
+
+  AI.bossSpecialAttack = function (boss, player) {
+    const damage = (boss.damage || 1) * 2;
+    player.hp -= damage;
+    Engine.Events.emit('onHit', { target: player, amount: damage });
+    Graphics.spawnHitEffect(player.pos);
+  };
+
+})();

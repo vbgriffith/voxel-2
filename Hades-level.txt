@@ -1,0 +1,103 @@
+/* ============================================================
+   LEVEL.JS — PROCEDURAL ROOMS & SPAWN SYSTEM
+   Project: CYCLEBREAKER
+   Responsibility: Room generation, enemy/trap placement
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const Level = {};
+  window.Level = Level;
+
+  /* ============================================================
+     ROOM TEMPLATES
+     ============================================================ */
+  Level.roomTemplates = [
+    { type: 'combat', enemies: 3, traps: 1 },
+    { type: 'treasure', enemies: 1, traps: 0 },
+    { type: 'trap', enemies: 0, traps: 3 },
+    { type: 'boss', enemies: 1, traps: 2 }
+  ];
+
+  Level.rooms = [];
+
+  /* ============================================================
+     GENERATE LEVEL
+     ============================================================ */
+  Level.generateLevel = function (numRooms = 10) {
+    Level.rooms = [];
+    for (let i = 0; i < numRooms; i++) {
+      const template = Level.roomTemplates[Math.floor(Math.random() * Level.roomTemplates.length)];
+      const room = {
+        id: i,
+        type: template.type,
+        enemies: [],
+        traps: [],
+        visited: false
+      };
+      Level.spawnEnemies(room, template.enemies);
+      Level.spawnTraps(room, template.traps);
+      Level.rooms.push(room);
+    }
+    return Level.rooms;
+  };
+
+  /* ============================================================
+     SPAWN ENEMIES
+     ============================================================ */
+  Level.spawnEnemies = function (room, count) {
+    for (let i = 0; i < count; i++) {
+      const enemy = {
+        id: `${room.id}-${i}`,
+        pos: { x: Math.random() * 4 - 2, z: Math.random() * 4 - 2 },
+        hp: 5,
+        maxHp: 5,
+        damage: 1,
+        speed: 0.02 + Math.random() * 0.03,
+        state: AI.State.IDLE,
+        detectionRange: 5,
+        attackRange: 1
+      };
+      room.enemies.push(enemy);
+    }
+  };
+
+  /* ============================================================
+     SPAWN TRAPS
+     ============================================================ */
+  Level.spawnTraps = function (room, count) {
+    for (let i = 0; i < count; i++) {
+      const trap = {
+        id: `${room.id}-trap-${i}`,
+        pos: { x: Math.random() * 4 - 2, z: Math.random() * 4 - 2 },
+        damage: 1,
+        active: true
+      };
+      room.traps.push(trap);
+    }
+  };
+
+  /* ============================================================
+     ENTER ROOM
+     ============================================================ */
+  Level.enterRoom = function (roomId) {
+    const room = Level.rooms.find(r => r.id === roomId);
+    if (!room) return;
+
+    room.visited = true;
+    Engine.Events.emit('onRoomStart', { room });
+
+    // Spawn enemies & traps into Gameplay.world
+    Gameplay.world.enemies = room.enemies;
+    Gameplay.world.traps = room.traps;
+
+    // Dynamic audio / music per room type
+    if (room.type === 'boss') Audio.playMusic('boss_theme');
+    else Audio.playMusic('room_theme');
+
+    // Optional visual effects
+    Graphics.shake(150, 0.1);
+  };
+
+})();

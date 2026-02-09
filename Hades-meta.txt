@@ -1,0 +1,98 @@
+/* ============================================================
+   META.JS — RUN PROGRESSION & UNLOCKABLES
+   Project: CYCLEBREAKER
+   Responsibility: Stats, achievements, unlocks, persistent meta
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const Meta = {};
+  window.Meta = Meta;
+
+  /* ============================================================
+     PERSISTENT DATA
+     ============================================================ */
+  Meta.data = JSON.parse(localStorage.getItem('CycleBreakerMeta') || '{}');
+  if (!Meta.data.unlocks) Meta.data.unlocks = { weapons: [], boons: [], skins: [] };
+  if (!Meta.data.achievements) Meta.data.achievements = {};
+
+  Meta.save = function () {
+    localStorage.setItem('CycleBreakerMeta', JSON.stringify(Meta.data));
+  };
+
+  /* ============================================================
+     RUN TRACKING
+     ============================================================ */
+  Meta.currentRun = {
+    kills: 0,
+    rooms: 0,
+    damageDealt: 0,
+    boonsCollected: 0
+  };
+
+  Engine.Events.on('onKill', ({ target, amount }) => {
+    Meta.currentRun.kills += 1;
+    Meta.currentRun.damageDealt += amount || target.hp;
+  });
+
+  Engine.Events.on('onRoomStart', ({ room }) => {
+    Meta.currentRun.rooms += 1;
+  });
+
+  Engine.Events.on('onBoonPickup', ({ boon }) => {
+    Meta.currentRun.boonsCollected += 1;
+  });
+
+  /* ============================================================
+     ACHIEVEMENTS
+     ============================================================ */
+  Meta.checkAchievements = function () {
+    if (Meta.currentRun.kills >= 50 && !Meta.data.achievements['killer']) {
+      Meta.data.achievements['killer'] = true;
+      UI.showFloatingStoryText("Achievement Unlocked: Killer!");
+    }
+    if (Meta.currentRun.rooms >= 20 && !Meta.data.achievements['explorer']) {
+      Meta.data.achievements['explorer'] = true;
+      UI.showFloatingStoryText("Achievement Unlocked: Explorer!");
+    }
+    Meta.save();
+  };
+
+  /* ============================================================
+     UNLOCKABLES
+     ============================================================ */
+  Meta.unlockWeapon = function (weaponId) {
+    if (!Meta.data.unlocks.weapons.includes(weaponId)) {
+      Meta.data.unlocks.weapons.push(weaponId);
+      UI.showFloatingStoryText(`Weapon Unlocked: ${weaponId}`);
+      Meta.save();
+    }
+  };
+
+  Meta.unlockBoon = function (boonId) {
+    if (!Meta.data.unlocks.boons.includes(boonId)) {
+      Meta.data.unlocks.boons.push(boonId);
+      UI.showFloatingStoryText(`Boon Unlocked: ${boonId}`);
+      Meta.save();
+    }
+  };
+
+  Meta.unlockSkin = function (skinId) {
+    if (!Meta.data.unlocks.skins.includes(skinId)) {
+      Meta.data.unlocks.skins.push(skinId);
+      UI.showFloatingStoryText(`Skin Unlocked: ${skinId}`);
+      Meta.save();
+    }
+  };
+
+  /* ============================================================
+     END OF RUN
+     ============================================================ */
+  Meta.endRun = function () {
+    Meta.checkAchievements();
+    console.log('Run Stats:', Meta.currentRun);
+    Meta.currentRun = { kills: 0, rooms: 0, damageDealt: 0, boonsCollected: 0 };
+  };
+
+})();

@@ -1,0 +1,128 @@
+/* ============================================================
+   STORY.JS — NARRATIVE, LORE, AND MEMORY SYSTEM
+   Project: CYCLEBREAKER
+   Responsibility: Dialogue, lore, branching story, player memory
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const Story = {};
+  window.Story = Story;
+
+  /* ============================================================
+     STORY BEATS
+     ============================================================ */
+  Story.beats = [
+    {
+      id: 'intro',
+      text: "You awaken in the dim halls of the underworld, your memories fragmented. Death is not an ending.",
+      choices: [
+        { text: "Step forward", next: "first_enemy_encounter" },
+        { text: "Pause and breathe", next: "intro_pause" }
+      ]
+    },
+    {
+      id: 'intro_pause',
+      text: "Silence surrounds you. Shadows whisper of trials to come.",
+      choices: [
+        { text: "Step forward", next: "first_enemy_encounter" }
+      ]
+    },
+    {
+      id: 'first_enemy_encounter',
+      text: "Shades emerge from the gloom, testing your resolve. Your blade thirsts for purpose.",
+      choices: []
+    },
+    {
+      id: 'first_boon',
+      text: "A fleeting warmth enters your grasp — a boon from a hidden source. Power courses through your veins.",
+      choices: []
+    }
+  ];
+
+  /* ============================================================
+     MEMORY / ECHO SYSTEM
+     ============================================================ */
+  Story.memories = [];
+
+  Story.collectMemory = function (eventId, description) {
+    Story.memories.push({ id: eventId, description, timestamp: Date.now() });
+    console.log(`Memory collected: ${description}`);
+  };
+
+  Story.getMemories = function () {
+    return [...Story.memories].sort((a, b) => a.timestamp - b.timestamp);
+  };
+
+  /* ============================================================
+     NPC INTERACTIONS
+     ============================================================ */
+  Story.npcs = [
+    {
+      id: 'orpheus',
+      name: 'Orpheus',
+      role: 'Guide',
+      dialogue: [
+        { trigger: 'intro', text: "Hush, traveler. Listen to the echoes of your past." },
+        { trigger: 'first_enemy_encounter', text: "Strike true, and remember: death is a lesson." }
+      ]
+    },
+    {
+      id: 'persephone',
+      name: 'Persephone',
+      role: 'Watcher',
+      dialogue: [
+        { trigger: 'first_boon', text: "Power is fleeting. Use it wisely, child of defiance." }
+      ]
+    }
+  ];
+
+  Story.talkToNPC = function (npcId, trigger) {
+    const npc = Story.npcs.find(n => n.id === npcId);
+    if (!npc) return null;
+    const dlg = npc.dialogue.find(d => d.trigger === trigger);
+    if (dlg) console.log(`${npc.name}: "${dlg.text}"`);
+    return dlg ? dlg.text : null;
+  };
+
+  /* ============================================================
+     STORY FLOW CONTROL
+     ============================================================ */
+  Story.currentBeat = null;
+
+  Story.start = function () {
+    Story.goto('intro');
+  };
+
+  Story.goto = function (beatId) {
+    const beat = Story.beats.find(b => b.id === beatId);
+    if (!beat) return;
+    Story.currentBeat = beat;
+    console.log(`--- STORY: ${beat.text}`);
+    if (beat.choices.length > 0) {
+      beat.choices.forEach((c, i) => {
+        console.log(`[${i + 1}] ${c.text}`);
+      });
+    }
+  };
+
+  Story.choose = function (index) {
+    const beat = Story.currentBeat;
+    if (!beat || !beat.choices || index < 0 || index >= beat.choices.length) return;
+    const nextId = beat.choices[index].next;
+    Story.goto(nextId);
+  };
+
+  /* ============================================================
+     EVENT HOOKS
+     ============================================================ */
+  Engine.Events.on('onKill', ({ target }) => {
+    Story.collectMemory('kill_' + target.id, `Defeated ${target.id} in the underworld.`);
+  });
+
+  Engine.Events.on('onBoonPickup', ({ boon }) => {
+    Story.collectMemory('boon_' + boon.id, `Gained boon: ${boon.name}`);
+  });
+
+})();

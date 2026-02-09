@@ -1,0 +1,188 @@
+/* ============================================================
+   GRAPHICS.JS — VISUAL POLISH & PARTICLE SYSTEMS
+   Project: CYCLEBREAKER
+   Responsibility: Particle effects, camera FX, post-processing
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const Graphics = {};
+  window.Graphics = Graphics;
+
+  /* ============================================================
+     SETUP
+     ============================================================ */
+  Graphics.scene = Engine.scene; // Babylon.js scene reference
+  Graphics.pools = {
+    particle: [],
+    trail: []
+  };
+
+  /* ============================================================
+     UTILITY
+     ============================================================ */
+  function getParticle() {
+    let p = Graphics.pools.particle.find(x => !x.active);
+    if (!p) {
+      p = new BABYLON.MeshBuilder.CreateSphere("particle", { diameter: 0.1 }, Graphics.scene);
+      p.material = new BABYLON.StandardMaterial("particleMat", Graphics.scene);
+      p.material.emissiveColor = new BABYLON.Color3(1, 0.5, 0);
+      p.active = false;
+      Graphics.pools.particle.push(p);
+    }
+    return p;
+  }
+
+  function getTrail() {
+    let t = Graphics.pools.trail.find(x => !x.active);
+    if (!t) {
+      t = new BABYLON.MeshBuilder.CreateBox("trail", { width: 0.2, height: 0.05, depth: 0.5 }, Graphics.scene);
+      t.material = new BABYLON.StandardMaterial("trailMat", Graphics.scene);
+      t.material.emissiveColor = new BABYLON.Color3(0.7, 0.7, 1);
+      t.active = false;
+      Graphics.pools.trail.push(t);
+    }
+    return t;
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  /* ============================================================
+     CAMERA FX
+     ============================================================ */
+  Graphics.shake = function (duration = 200, intensity = 0.2) {
+    if (!Graphics.scene.activeCamera) return;
+    const cam = Graphics.scene.activeCamera;
+    const startTime = Date.now();
+    const startPos = cam.position.clone();
+
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > duration) {
+        cam.position.copyFrom(startPos);
+        return;
+      }
+      cam.position.x = startPos.x + (Math.random() - 0.5) * intensity;
+      cam.position.y = startPos.y + (Math.random() - 0.5) * intensity;
+      cam.position.z = startPos.z + (Math.random() - 0.5) * intensity;
+      requestAnimationFrame(tick);
+    };
+    tick();
+  };
+
+  /* ============================================================
+     PARTICLE EFFECTS
+     ============================================================ */
+  Graphics.spawnHitEffect = function (pos) {
+    const p = getParticle();
+    p.position.x = pos.x;
+    p.position.y = 0.5;
+    p.position.z = pos.z;
+    p.scaling = new BABYLON.Vector3(0.1, 0.1, 0.1);
+    p.active = true;
+
+    let t = 0;
+    const duration = 300;
+    const anim = () => {
+      t += 16;
+      if (t > duration) {
+        p.active = false;
+        p.isVisible = false;
+        return;
+      }
+      p.isVisible = true;
+      const scale = lerp(0.1, 0.5, t / duration);
+      p.scaling.set(scale, scale, scale);
+      requestAnimationFrame(anim);
+    };
+    anim();
+  };
+
+  Graphics.spawnEnemyDeathEffect = function (enemy) {
+    for (let i = 0; i < 5; i++) {
+      const offset = { x: (Math.random() - 0.5) * 1, z: (Math.random() - 0.5) * 1 };
+      Graphics.spawnHitEffect({ x: enemy.pos.x + offset.x, z: enemy.pos.z + offset.z });
+    }
+  };
+
+  /* ============================================================
+     WEAPON TRAILS
+     ============================================================ */
+  Graphics.spawnWeaponTrail = function (pos) {
+    const t = getTrail();
+    t.position.x = pos.x;
+    t.position.y = 0.5;
+    t.position.z = pos.z;
+    t.active = true;
+
+    let life = 200;
+    const tick = () => {
+      life -= 16;
+      if (life <= 0) {
+        t.active = false;
+        t.isVisible = false;
+        return;
+      }
+      t.scaling.y = lerp(0.05, 0.01, 1 - life / 200);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  };
+
+  /* ============================================================
+     DASH EFFECT
+     ============================================================ */
+  Graphics.spawnDashEffect = function (player) {
+    for (let i = 0; i < 3; i++) {
+      const offset = { x: (Math.random() - 0.5) * 0.5, z: (Math.random() - 0.5) * 0.5 };
+      Graphics.spawnHitEffect({ x: player.pos.x + offset.x, z: player.pos.z + offset.z });
+    }
+    Graphics.shake(120, 0.15);
+  };
+
+  /* ============================================================
+     POST-PROCESSING
+     ============================================================ */
+  Graphics.addPostProcessing = function () {
+    if (!Graphics.scene.activeCamera) return;
+
+    const pipeline = new BABYLON.DefaultRenderingPipeline(
+      "pipeline",
+      true,
+      Graphics.scene,
+      [Graphics.scene.activeCamera]
+    );
+    pipeline.bloomEnabled = true;
+    pipeline.bloomThreshold = 0.8;
+    pipeline.bloomIntensity = 0.6;
+    pipeline.bloomKernel = 64;
+    pipeline.bloomWeight = 0.5;
+
+    pipeline.vignetteEnabled = true;
+    pipeline.vignetteBlendMode = BABYLON.ImageProcessingConfiguration.VIGNETTEMODE_MULTIPLY;
+    pipeline.vignetteIntensity = 0.3;
+  };
+
+  /* ============================================================
+     EVENT HOOKS
+     ============================================================ */
+  Engine.Events.on('onAttack', ({ source }) => {
+    Graphics.spawnWeaponTrail(source.pos);
+  });
+
+  Engine.Events.on('onHit', ({ target }) => {
+    Graphics.spawnHitEffect(target.pos);
+  });
+
+  Engine.Events.on('onKill', ({ target }) => {
+    Graphics.spawnEnemyDeathEffect(target);
+  });
+
+  Engine.Events.on('onDash', ({ pos }) => {
+    Graphics.spawnDashEffect(pos || Gameplay.world.player);
+  });
+
+})();

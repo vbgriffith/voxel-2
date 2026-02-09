@@ -1,0 +1,119 @@
+/* ============================================================
+   AUDIO.JS — SOUND & MUSIC LAYER
+   Project: CYCLEBREAKER
+   Responsibility: Dynamic music, SFX, positional audio
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const Audio = {};
+  window.Audio = Audio;
+
+  /* ============================================================
+     SETUP
+     ============================================================ */
+  Audio.context = new (window.AudioContext || window.webkitAudioContext)();
+  Audio.sounds = {};
+  Audio.music = {};
+  Audio.musicSource = null;
+  Audio.musicGain = Audio.context.createGain();
+  Audio.sfxGain = Audio.context.createGain();
+  Audio.musicGain.connect(Audio.context.destination);
+  Audio.sfxGain.connect(Audio.context.destination);
+
+  /* ============================================================
+     LOAD SOUNDS
+     ============================================================ */
+  Audio.loadSound = async function (id, url) {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await Audio.context.decodeAudioData(arrayBuffer);
+    Audio.sounds[id] = audioBuffer;
+  };
+
+  Audio.loadMusic = async function (id, url) {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await Audio.context.decodeAudioData(arrayBuffer);
+    Audio.music[id] = audioBuffer;
+  };
+
+  /* ============================================================
+     PLAY SFX
+     ============================================================ */
+  Audio.playSFX = function (id, pos = null, volume = 1) {
+    if (!Audio.sounds[id]) return;
+    const source = Audio.context.createBufferSource();
+    source.buffer = Audio.sounds[id];
+
+    const gainNode = Audio.context.createGain();
+    gainNode.gain.value = volume;
+    source.connect(gainNode);
+
+    if (pos) {
+      const panner = Audio.context.createPanner();
+      panner.panningModel = 'HRTF';
+      panner.distanceModel = 'linear';
+      panner.setPosition(pos.x, pos.y || 0, pos.z);
+      gainNode.connect(panner);
+      panner.connect(Audio.sfxGain);
+    } else {
+      gainNode.connect(Audio.sfxGain);
+    }
+
+    source.start(0);
+  };
+
+  /* ============================================================
+     PLAY MUSIC
+     ============================================================ */
+  Audio.playMusic = function (id, loop = true) {
+    if (!Audio.music[id]) return;
+    if (Audio.musicSource) Audio.musicSource.stop();
+
+    const source = Audio.context.createBufferSource();
+    source.buffer = Audio.music[id];
+    source.loop = loop;
+    source.connect(Audio.musicGain);
+    source.start(0);
+    Audio.musicSource = source;
+  };
+
+  Audio.stopMusic = function () {
+    if (Audio.musicSource) Audio.musicSource.stop();
+    Audio.musicSource = null;
+  };
+
+  Audio.setMusicVolume = function (v) {
+    Audio.musicGain.gain.value = v;
+  };
+
+  Audio.setSFXVolume = function (v) {
+    Audio.sfxGain.gain.value = v;
+  };
+
+  /* ============================================================
+     EVENT HOOKS
+     ============================================================ */
+  Engine.Events.on('onAttack', ({ source }) => {
+    Audio.playSFX('attack', source.pos, 0.5);
+  });
+
+  Engine.Events.on('onHit', ({ target }) => {
+    Audio.playSFX('hit', target.pos, 0.6);
+  });
+
+  Engine.Events.on('onKill', ({ target }) => {
+    Audio.playSFX('death', target.pos, 0.8);
+  });
+
+  Engine.Events.on('onDash', ({ pos }) => {
+    Audio.playSFX('dash', pos || Gameplay.world.player.pos, 0.5);
+  });
+
+  Engine.Events.on('onBoonPickup', ({ boon }) => {
+    Audio.playSFX('boon_pickup', Gameplay.world.player.pos, 0.7);
+  });
+
+})();

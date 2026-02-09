@@ -1,0 +1,100 @@
+/* ============================================================
+   STORY_EXTRA.JS — BRANCHING NARRATIVE & LORE SYSTEM
+   Project: CYCLEBREAKER
+   Responsibility: Random events, flavor text, branching story
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const StoryExtra = {};
+  window.StoryExtra = StoryExtra;
+
+  /* ============================================================
+     STORY EVENTS
+     ============================================================ */
+  StoryExtra.events = [
+    {
+      type: 'room_entry',
+      text: [
+        "You feel a chilling breeze as you enter...",
+        "A faint whisper echoes in the shadows...",
+        "The air thickens; danger lurks ahead..."
+      ]
+    },
+    {
+      type: 'kill',
+      text: [
+        "The foe collapses, leaving a lingering curse.",
+        "You feel power surge as the enemy falls.",
+        "A mysterious presence acknowledges your victory..."
+      ]
+    },
+    {
+      type: 'boon',
+      text: [
+        "A blessing descends from the heavens.",
+        "You feel your skills sharpen, guided by fate.",
+        "Power flows through you, beyond mortal limits."
+      ]
+    }
+  ];
+
+  /* ============================================================
+     UTILITY
+     ============================================================ */
+  StoryExtra.randomText = function (type) {
+    const evt = StoryExtra.events.find(e => e.type === type);
+    if (!evt) return '';
+    return evt.text[Math.floor(Math.random() * evt.text.length)];
+  };
+
+  StoryExtra.triggerRandomEvent = function (targetOrRoom) {
+    const type = targetOrRoom.hp !== undefined ? 'kill' : 'room_entry';
+    const text = StoryExtra.randomText(type);
+    if (text) UI.showFloatingStoryText(text, targetOrRoom.pos || { x: 400, z: 300 });
+  };
+
+  /* ============================================================
+     FLOATING STORY TEXT
+     ============================================================ */
+  UI.showFloatingStoryText = function (text, pos) {
+    const div = document.createElement('div');
+    div.innerText = text;
+    div.style.position = 'absolute';
+    div.style.color = 'lightyellow';
+    div.style.fontWeight = 'bold';
+    div.style.fontFamily = 'serif';
+    div.style.left = (pos.screenX || pos.x || 400) + 'px';
+    div.style.top = (pos.screenY || pos.z || 300) + 'px';
+    div.style.pointerEvents = 'none';
+    UI.container.appendChild(div);
+
+    let life = 0;
+    const anim = () => {
+      life += 1;
+      div.style.top = parseFloat(div.style.top) - 0.5 + 'px';
+      div.style.opacity = 1 - life / 120;
+      if (life < 120) requestAnimationFrame(anim);
+      else UI.container.removeChild(div);
+    };
+    anim();
+  };
+
+  /* ============================================================
+     EVENT HOOKS
+     ============================================================ */
+  Engine.Events.on('onKill', ({ target }) => {
+    StoryExtra.triggerRandomEvent(target);
+  });
+
+  Engine.Events.on('onRoomStart', ({ room }) => {
+    StoryExtra.triggerRandomEvent(room);
+  });
+
+  Engine.Events.on('onBoonPickup', ({ boon }) => {
+    const text = StoryExtra.randomText('boon');
+    if (text) UI.showFloatingStoryText(text, Gameplay.world.player.pos);
+  });
+
+})();

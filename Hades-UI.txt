@@ -1,0 +1,141 @@
+/* ============================================================
+   UI.JS — HEADS-UP DISPLAY & PLAYER FEEDBACK
+   Project: CYCLEBREAKER
+   Responsibility: HUD, floating damage, menus
+   ============================================================ */
+
+(() => {
+  'use strict';
+
+  const UI = {};
+  window.UI = UI;
+
+  /* ============================================================
+     SETUP
+     ============================================================ */
+  UI.container = document.createElement('div');
+  UI.container.style.position = 'absolute';
+  UI.container.style.top = '0';
+  UI.container.style.left = '0';
+  UI.container.style.width = '100%';
+  UI.container.style.height = '100%';
+  UI.container.style.pointerEvents = 'none';
+  document.body.appendChild(UI.container);
+
+  // HUD Elements
+  UI.hpBar = document.createElement('div');
+  UI.hpBar.style.position = 'absolute';
+  UI.hpBar.style.left = '20px';
+  UI.hpBar.style.top = '20px';
+  UI.hpBar.style.width = '200px';
+  UI.hpBar.style.height = '20px';
+  UI.hpBar.style.background = 'rgba(50,50,50,0.7)';
+  UI.hpBarFill = document.createElement('div');
+  UI.hpBarFill.style.height = '100%';
+  UI.hpBarFill.style.width = '100%';
+  UI.hpBarFill.style.background = 'red';
+  UI.hpBar.appendChild(UI.hpBarFill);
+  UI.container.appendChild(UI.hpBar);
+
+  UI.weaponInfo = document.createElement('div');
+  UI.weaponInfo.style.position = 'absolute';
+  UI.weaponInfo.style.left = '20px';
+  UI.weaponInfo.style.top = '50px';
+  UI.weaponInfo.style.color = 'white';
+  UI.weaponInfo.style.fontFamily = 'sans-serif';
+  UI.container.appendChild(UI.weaponInfo);
+
+  UI.boonInfo = document.createElement('div');
+  UI.boonInfo.style.position = 'absolute';
+  UI.boonInfo.style.left = '20px';
+  UI.boonInfo.style.top = '80px';
+  UI.boonInfo.style.color = 'lightblue';
+  UI.boonInfo.style.fontFamily = 'sans-serif';
+  UI.container.appendChild(UI.boonInfo);
+
+  /* ============================================================
+     FLOATING DAMAGE
+     ============================================================ */
+  UI.floatingTexts = [];
+
+  UI.showDamage = function (target, amount) {
+    const div = document.createElement('div');
+    div.innerText = amount;
+    div.style.position = 'absolute';
+    div.style.color = 'orange';
+    div.style.fontWeight = 'bold';
+    div.style.fontFamily = 'sans-serif';
+    div.style.left = (target.screenX || 400) + 'px';
+    div.style.top = (target.screenY || 300) + 'px';
+    div.style.pointerEvents = 'none';
+    UI.container.appendChild(div);
+
+    let life = 0;
+    const anim = () => {
+      life += 1;
+      div.style.top = parseFloat(div.style.top) - 1 + 'px';
+      div.style.opacity = 1 - life / 60;
+      if (life < 60) requestAnimationFrame(anim);
+      else UI.container.removeChild(div);
+    };
+    anim();
+  };
+
+  /* ============================================================
+     HUD UPDATES
+     ============================================================ */
+  UI.updateHP = function (player) {
+    const pct = Math.max(0, Math.min(1, player.hp / player.maxHp));
+    UI.hpBarFill.style.width = `${pct * 100}%`;
+  };
+
+  UI.updateWeapon = function (weapon) {
+    UI.weaponInfo.innerText = `Weapon: ${weapon.name} (DMG: ${weapon.damage})`;
+  };
+
+  UI.updateBoons = function (boons) {
+    UI.boonInfo.innerText = `Boons: ${boons.map(b => b.name).join(', ')}`;
+  };
+
+  /* ============================================================
+     SIMPLE MENU (PAUSE)
+     ============================================================ */
+  UI.menuOpen = false;
+  UI.menuDiv = document.createElement('div');
+  UI.menuDiv.style.position = 'absolute';
+  UI.menuDiv.style.top = '50%';
+  UI.menuDiv.style.left = '50%';
+  UI.menuDiv.style.transform = 'translate(-50%, -50%)';
+  UI.menuDiv.style.background = 'rgba(0,0,0,0.8)';
+  UI.menuDiv.style.color = 'white';
+  UI.menuDiv.style.padding = '20px';
+  UI.menuDiv.style.display = 'none';
+  UI.menuDiv.style.fontFamily = 'sans-serif';
+  UI.menuDiv.innerText = 'PAUSED\nPress P to Resume';
+  document.body.appendChild(UI.menuDiv);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'p' || e.key === 'P') {
+      UI.menuOpen = !UI.menuOpen;
+      UI.menuDiv.style.display = UI.menuOpen ? 'block' : 'none';
+      Engine.paused = UI.menuOpen;
+    }
+  });
+
+  /* ============================================================
+     EVENT HOOKS
+     ============================================================ */
+  Engine.Events.on('onHit', ({ target, amount }) => {
+    UI.showDamage(target, amount);
+    UI.updateHP(Gameplay.world.player);
+  });
+
+  Engine.Events.on('onWeaponChange', ({ weapon }) => {
+    UI.updateWeapon(weapon);
+  });
+
+  Engine.Events.on('onBoonPickup', ({ boon }) => {
+    UI.updateBoons(Gameplay.world.player.boons || []);
+  });
+
+})();
