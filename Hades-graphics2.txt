@@ -1,0 +1,103 @@
+(() => {
+  'use strict';
+
+  const Graphics = {};
+  window.Graphics = Graphics;
+
+  let scene;
+  const materials = {};
+  const particleSystems = [];
+
+  Engine.Events.on('onSceneReady', ({ scene: s }) => {
+    scene = s;
+    Graphics.init();
+  });
+
+  Graphics.init = function () {
+    if (!scene) return;
+
+    // === Lighting ===
+    const light = new BABYLON.HemisphericLight('hemilight', new BABYLON.Vector3(0, 1, 0), scene);
+    light.intensity = 0.6;
+
+    const dirLight = new BABYLON.DirectionalLight('dirlight', new BABYLON.Vector3(-1, -2, -1), scene);
+    dirLight.position = new BABYLON.Vector3(20, 40, 20);
+    dirLight.intensity = 0.7;
+    dirLight.shadowEnabled = true;
+
+    // === Materials ===
+    materials.player = new BABYLON.StandardMaterial('playerMat', scene);
+    materials.player.diffuseColor = new BABYLON.Color3(0.8, 0.2, 0.2);
+    materials.player.specularColor = new BABYLON.Color3(1, 1, 1);
+    materials.player.emissiveColor = new BABYLON.Color3(0.1, 0, 0);
+
+    materials.enemy = new BABYLON.StandardMaterial('enemyMat', scene);
+    materials.enemy.diffuseColor = new BABYLON.Color3(0.2, 0.2, 0.8);
+    materials.enemy.specularColor = new BABYLON.Color3(1, 1, 1);
+    materials.enemy.emissiveColor = new BABYLON.Color3(0, 0, 0.1);
+
+    materials.ground = new BABYLON.StandardMaterial('groundMat', scene);
+    materials.ground.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+    materials.ground.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+
+    // Apply ground material
+    const ground = scene.getMeshByName('ground');
+    if (ground) ground.material = materials.ground;
+
+    // === Shadows ===
+    const shadowGenerator = new BABYLON.ShadowGenerator(1024, dirLight);
+    Engine.Events.on('onRoomStart', ({ room }) => {
+      const playerMesh = World.getMeshForEntity(Gameplay.world.player);
+      if (playerMesh) shadowGenerator.addShadowCaster(playerMesh);
+
+      room.enemies.forEach(e => {
+        const enemyMesh = World.getMeshForEntity(e);
+        if (enemyMesh) shadowGenerator.addShadowCaster(enemyMesh);
+      });
+    });
+
+    // === Particle Effects ===
+    Engine.Events.on('onFrame', Graphics.updateParticles);
+  };
+
+  // Create a particle system for attacks
+  Graphics.createAttackParticles = function (entity) {
+    const particle = new BABYLON.ParticleSystem('attack', 200, scene);
+    particle.particleTexture = new BABYLON.Texture('https://cdn.jsdelivr.net/gh/mrdoob/three.js@r146/examples/textures/sprites/spark1.png', scene);
+    particle.emitter = World.getMeshForEntity(entity) || new BABYLON.Vector3(0, 1, 0);
+    particle.minSize = 0.1;
+    particle.maxSize = 0.3;
+    particle.color1 = new BABYLON.Color4(1, 0.5, 0, 1);
+    particle.color2 = new BABYLON.Color4(1, 1, 0, 1);
+    particle.gravity = new BABYLON.Vector3(0, -0.5, 0);
+    particle.direction1 = new BABYLON.Vector3(-1, 1, -1);
+    particle.direction2 = new BABYLON.Vector3(1, 1, 1);
+    particle.minEmitPower = 0.5;
+    particle.maxEmitPower = 1.0;
+    particle.emitRate = 20;
+    particleSystems.push(particle);
+    particle.start();
+    return particle;
+  };
+
+  Graphics.updateParticles = function () {
+    particleSystems.forEach(ps => {
+      if (!ps.isStopped) ps.manualEmitCount = 0; // let Babylon handle updates
+    });
+  };
+
+  // === Helpers ===
+  Graphics.getMaterial = (name) => materials[name];
+
+  // === Hook: assign materials to entities on room start ===
+  Engine.Events.on('onRoomStart', ({ room }) => {
+    const playerMesh = World.getMeshForEntity(Gameplay.world.player);
+    if (playerMesh) playerMesh.material = materials.player;
+
+    room.enemies.forEach(e => {
+      const mesh = World.getMeshForEntity(e);
+      if (mesh) mesh.material = materials.enemy;
+    });
+  });
+
+})();
