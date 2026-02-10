@@ -1,0 +1,14 @@
+World.update = () => {
+  World.entityMeshMap.forEach((mesh, entity) => {
+    mesh.position.x = entity.pos?.x ?? mesh.position.x;
+    mesh.position.z = entity.pos?.z ?? mesh.position.z;
+  });
+
+  const player = Gameplay.world.player;
+  if (player && scene.activeCamera) {
+    const cam = scene.activeCamera;
+    cam.position.x = player.pos.x;
+    cam.position.z = player.pos.z - 12;
+    cam.setTarget(new BABYLON.Vector3(player.pos.x, 0, player.pos.z));
+  }
+};
