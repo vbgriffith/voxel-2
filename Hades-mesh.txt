@@ -1,0 +1,25 @@
+World.entityMeshMap = new Map();
+
+World.getMeshForEntity = function(entity) {
+  return World.entityMeshMap.get(entity);
+};
+
+// In World.onRoomStart, when we create meshes:
+World.onRoomStart = ({ room }) => {
+  World.entityMeshMap.clear();
+
+  const player = Gameplay.world.player;
+  if (player) {
+    const mesh = BABYLON.MeshBuilder.CreateCapsule('player', {radius: 0.5, height: 1.5}, scene);
+    mesh.position.y = 0.75; // half-height
+    World.entityMeshMap.set(player, mesh);
+  }
+
+  room.enemies.forEach(e => {
+    const mesh = BABYLON.MeshBuilder.CreateBox('enemy', {size: 1}, scene);
+    mesh.position.y = 0.5; // half-height
+    mesh.position.x = e.pos.x;
+    mesh.position.z = e.pos.z;
+    World.entityMeshMap.set(e, mesh);
+  });
+};
