@@ -1,0 +1,31 @@
+Engine.Events.on('onSceneReady', ({ scene }) => {
+  const level = Engine.Level.data; // parsed from Hades-level.txt
+  const size = Engine.World.tileSize ?? 2;
+  const height = Engine.World.wallHeight ?? 3;
+
+  const wallMat = new BABYLON.StandardMaterial("wallMat", scene);
+  wallMat.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.45);
+
+  level.forEach((row, z) => {
+    row.forEach((cell, x) => {
+      if (cell === '#') {
+        const wall = BABYLON.MeshBuilder.CreateBox(
+          `wall_${x}_${z}`,
+          { width: size, height, depth: size },
+          scene
+        );
+
+        wall.position.set(
+          x * size,
+          height / 2,
+          z * size
+        );
+
+        wall.checkCollisions = true;
+        wall.material = wallMat;
+      }
+    });
+  });
+
+  scene.collisionsEnabled = true;
+});
