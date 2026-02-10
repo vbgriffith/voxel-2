@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Underworld Escape - A Hades-Inspired Roguelike</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a0a;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            width: 100%;
+            height: 100vh;
+            display: block;
+            touch-action: none;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+        }
+        
+        .stat-bar {
+            margin-bottom: 10px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #ffd700;
+            margin-bottom: 5px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        
+        .bar-container {
+            width: 300px;
+            height: 25px;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid #ffd700;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .bar-fill {
+            height: 100%;
+            transition: width 0.3s;
+            background: linear-gradient(90deg, #ff4444, #cc0000);
+        }
+        
+        .bar-fill.dash {
+            background: linear-gradient(90deg, #44aaff, #0066cc);
+        }
+        
+        #abilities {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            pointer-events: none;
+        }
+        
+        .ability {
+            width: 60px;
+            height: 60px;
+            background: rgba(0,0,0,0.8);
+            border: 3px solid #ffd700;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            text-align: center;
+            position: relative;
+        }
+        
+        .ability.cooldown {
+            opacity: 0.5;
+            border-color: #666;
+        }
+        
+        .ability-key {
+            font-size: 18px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        
+        .ability-cooldown {
+            position: absolute;
+            bottom: 5px;
+            font-size: 10px;
+            color: #ff6666;
+        }
+        
+        #menu {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(10, 10, 10, 0.95);
+            border: 3px solid #ffd700;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            pointer-events: auto;
+            min-width: 500px;
+        }
+        
+        #menu.hidden {
+            display: none;
+        }
+        
+        #menu h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #ffd700;
+            text-shadow: 3px 3px 6px rgba(255, 0, 0, 0.5);
+        }
+        
+        #menu h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+            color: #ffd700;
+        }
+        
+        #menu p {
+            font-size: 16px;
+            margin-bottom: 30px;
+            color: #ccc;
+            line-height: 1.6;
+        }
+        
+        .menu-button {
+            background: linear-gradient(135deg, #cc0000, #ff4444);
+            color: #fff;
+            border: 2px solid #ffd700;
+            padding: 15px 40px;
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 10px;
+            transition: all 0.3s;
+            pointer-events: auto;
+        }
+        
+        .menu-button:hover {
+            background: linear-gradient(135deg, #ff4444, #ff6666);
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+        }
+        
+        #upgrades {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .upgrade-option {
+            background: rgba(0,0,0,0.5);
+            border: 2px solid #ffd700;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: left;
+        }
+        
+        .upgrade-option:hover {
+            background: rgba(255, 215, 0, 0.1);
+            border-color: #ffed4e;
+            transform: translateX(10px);
+        }
+        
+        .upgrade-title {
+            font-size: 20px;
+            color: #ffd700;
+            margin-bottom: 10px;
+        }
+        
+        .upgrade-description {
+            font-size: 14px;
+            color: #ccc;
+        }
+        
+        #stats {
+            margin-top: 20px;
+            color: #ffd700;
+        }
+        
+        .stat-line {
+            margin: 5px 0;
+            font-size: 16px;
+        }
+        
+        #roomInfo {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+            font-size: 18px;
+            color: #ffd700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui">
+        <div id="hud">
+            <div class="stat-bar">
+                <div class="stat-label">HEALTH</div>
+                <div class="bar-container">
+                    <div class="bar-fill" id="healthBar" style="width: 100%"></div>
+                </div>
+            </div>
+            <div class="stat-bar">
+                <div class="stat-label">DASH</div>
+                <div class="bar-container">
+                    <div class="bar-fill dash" id="dashBar" style="width: 100%"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="roomInfo">
+            <div>Room: <span id="roomNumber">1</span></div>
+            <div>Enemies: <span id="enemyCount">0</span></div>
+        </div>
+        
+        <div id="abilities">
+            <div class="ability">
+                <div class="ability-key">LMB</div>
+                <div>Attack</div>
+            </div>
+            <div class="ability" id="dashAbility">
+                <div class="ability-key">SPACE</div>
+                <div>Dash</div>
+                <div class="ability-cooldown" id="dashCooldown"></div>
+            </div>
+            <div class="ability" id="specialAbility">
+                <div class="ability-key">E</div>
+                <div>Special</div>
+                <div class="ability-cooldown" id="specialCooldown"></div>
+            </div>
+        </div>
+        
+        <div id="menu">
+            <h1>⚔️ UNDERWORLD ESCAPE ⚔️</h1>
+            <p>Battle through the depths of the underworld!<br>
+            WASD - Move | LMB - Attack | SPACE - Dash | E - Special Attack<br>
+            Defeat all enemies to progress to the next room.</p>
+            <button class="menu-button" onclick="game.startRun()">BEGIN YOUR ESCAPE</button>
+            <div id="stats" style="display: none;">
+                <div class="stat-line">Runs Completed: <span id="runsCompleted">0</span></div>
+                <div class="stat-line">Total Rooms Cleared: <span id="roomsCleared">0</span></div>
+                <div class="stat-line">Enemies Slain: <span id="enemiesSlain">0</span></div>
+            </div>
+        </div>
+        
+        <div id="upgradeMenu" class="hidden" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 10, 10, 0.95); border: 3px solid #ffd700; border-radius: 15px; padding: 40px; text-align: center; pointer-events: auto; min-width: 600px;">
+            <h2>Choose Your Boon</h2>
+            <p style="color: #ccc; margin-bottom: 20px;">The gods offer their blessing...</p>
+            <div id="upgrades"></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const engine = new BABYLON.Engine(canvas, true);
+        
+        const game = {
+            scene: null,
+            camera: null,
+            player: null,
+            enemies: [],
+            projectiles: [],
+            
+            // Player stats
+            playerHealth: 100,
+            playerMaxHealth: 100,
+            playerDamage: 20,
+            playerSpeed: 0.15,
+            dashCooldown: 0,
+            dashMaxCooldown: 60,
+            specialCooldown: 0,
+            specialMaxCooldown: 180,
+            
+            // Upgrades
+            maxHealthBonus: 0,
+            damageMultiplier: 1,
+            dashCooldownReduction: 0,
+            lifeSteal: 0,
+            attackSpeed: 1,
+            
+            // Room state
+            currentRoom: 0,
+            roomCleared: false,
+            
+            // Meta progression
+            totalRuns: 0,
+            totalRoomsCleared: 0,
+            totalEnemiesSlain: 0,
+            
+            // Input
+            keys: {},
+            mouseDown: false,
+            lastAttackTime: 0,
+            
+            init: function() {
+                this.scene = new BABYLON.Scene(engine);
+                this.scene.clearColor = new BABYLON.Color3(0.05, 0.05, 0.1);
+                
+                // Camera - isometric view
+                this.camera = new BABYLON.ArcRotateCamera(
+                    "camera",
+                    Math.PI / 4,
+                    Math.PI / 3,
+                    30,
+                    new BABYLON.Vector3(0, 0, 0),
+                    this.scene
+                );
+                this.camera.attachControl(canvas, false);
+                this.camera.lowerRadiusLimit = 20;
+                this.camera.upperRadiusLimit = 40;
+                this.camera.lowerBetaLimit = Math.PI / 6;
+                this.camera.upperBetaLimit = Math.PI / 2.5;
+                
+                // Lighting
+                const light1 = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 1, 0), this.scene);
+                light1.intensity = 0.6;
+                const light2 = new BABYLON.PointLight("light2", new BABYLON.Vector3(0, 10, 0), this.scene);
+                light2.intensity = 0.8;
+                
+                // Create arena floor
+                this.createArena();
+                
+                // Create player
+                this.createPlayer();
+                
+                // Input handlers
+                this.setupInput();
+                
+                // Game loop
+                this.scene.registerBeforeRender(() => this.update());
+                
+                engine.runRenderLoop(() => {
+                    this.scene.render();
+                });
+                
+                window.addEventListener('resize', () => {
+                    engine.resize();
+                });
+            },
+            
+            createArena: function() {
+                const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 40, height: 40}, this.scene);
+                const groundMat = new BABYLON.StandardMaterial("groundMat", this.scene);
+                groundMat.diffuseColor = new BABYLON.Color3(0.2, 0.1, 0.15);
+                groundMat.specularColor = new BABYLON.Color3(0, 0, 0);
+                ground.material = groundMat;
+                
+                // Create walls
+                const wallMat = new BABYLON.StandardMaterial("wallMat", this.scene);
+                wallMat.diffuseColor = new BABYLON.Color3(0.3, 0.15, 0.2);
+                wallMat.emissiveColor = new BABYLON.Color3(0.1, 0.05, 0.1);
+                
+                const walls = [
+                    {pos: [0, 1.5, 20], size: [40, 3, 1]},
+                    {pos: [0, 1.5, -20], size: [40, 3, 1]},
+                    {pos: [20, 1.5, 0], size: [1, 3, 40]},
+                    {pos: [-20, 1.5, 0], size: [1, 3, 40]}
+                ];
+                
+                walls.forEach(w => {
+                    const wall = BABYLON.MeshBuilder.CreateBox("wall", {
+                        width: w.size[0],
+                        height: w.size[1],
+                        depth: w.size[2]
+                    }, this.scene);
+                    wall.position = new BABYLON.Vector3(...w.pos);
+                    wall.material = wallMat;
+                });
+                
+                // Add some pillars for cover
+                const pillarMat = new BABYLON.StandardMaterial("pillarMat", this.scene);
+                pillarMat.diffuseColor = new BABYLON.Color3(0.4, 0.2, 0.25);
+                
+                const pillarPositions = [
+                    [-10, 2, -10], [10, 2, -10], [-10, 2, 10], [10, 2, 10],
+                    [-10, 2, 0], [10, 2, 0], [0, 2, -10], [0, 2, 10]
+                ];
+                
+                pillarPositions.forEach(pos => {
+                    const pillar = BABYLON.MeshBuilder.CreateCylinder("pillar", {
+                        height: 4,
+                        diameter: 1.5
+                    }, this.scene);
+                    pillar.position = new BABYLON.Vector3(...pos);
+                    pillar.material = pillarMat;
+                });
+            },
+            
+            createPlayer: function() {
+                // Player body
+                const body = BABYLON.MeshBuilder.CreateCylinder("player", {
+                    height: 2,
+                    diameter: 1
+                }, this.scene);
+                body.position.y = 1;
+                
+                const playerMat = new BABYLON.StandardMaterial("playerMat", this.scene);
+                playerMat.diffuseColor = new BABYLON.Color3(0.2, 0.6, 1);
+                playerMat.emissiveColor = new BABYLON.Color3(0.1, 0.3, 0.5);
+                body.material = playerMat;
+                
+                // Weapon indicator
+                const weapon = BABYLON.MeshBuilder.CreateBox("weapon", {
+                    width: 0.3,
+                    height: 0.3,
+                    depth: 1.5
+                }, this.scene);
+                weapon.position = new BABYLON.Vector3(0.6, 1, 0);
+                weapon.parent = body;
+                weapon.material = playerMat;
+                
+                this.player = {
+                    mesh: body,
+                    weapon: weapon,
+                    position: body.position,
+                    velocity: new BABYLON.Vector3(0, 0, 0),
+                    isDashing: false,
+                    dashTime: 0
+                };
+            },
+            
+            createEnemy: function(x, z) {
+                const enemy = BABYLON.MeshBuilder.CreateCylinder("enemy", {
+                    height: 1.8,
+                    diameter: 1
+                }, this.scene);
+                enemy.position = new BABYLON.Vector3(x, 0.9, z);
+                
+                const enemyMat = new BABYLON.StandardMaterial("enemyMat", this.scene);
+                enemyMat.diffuseColor = new BABYLON.Color3(1, 0.2, 0.2);
+                enemyMat.emissiveColor = new BABYLON.Color3(0.3, 0.05, 0.05);
+                enemy.material = enemyMat;
+                
+                return {
+                    mesh: enemy,
+                    position: enemy.position,
+                    health: 50 + (this.currentRoom * 10),
+                    maxHealth: 50 + (this.currentRoom * 10),
+                    speed: 0.05 + (this.currentRoom * 0.01),
+                    attackCooldown: 0,
+                    attackRange: 2,
+                    damage: 10 + (this.currentRoom * 2)
+                };
+            },
+            
+            spawnEnemies: function(count) {
+                this.enemies = [];
+                const radius = 15;
+                
+                for (let i = 0; i < count; i++) {
+                    const angle = (i / count) * Math.PI * 2;
+                    const x = Math.cos(angle) * radius;
+                    const z = Math.sin(angle) * radius;
+                    this.enemies.push(this.createEnemy(x, z));
+                }
+                
+                this.updateEnemyCount();
+            },
+            
+            setupInput: function() {
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.key.toLowerCase()] = true;
+                    
+                    if (e.key === ' ') {
+                        e.preventDefault();
+                        this.dash();
+                    } else if (e.key.toLowerCase() === 'e') {
+                        this.useSpecial();
+                    }
+                });
+                
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.key.toLowerCase()] = false;
+                });
+                
+                canvas.addEventListener('mousedown', (e) => {
+                    if (e.button === 0) {
+                        this.mouseDown = true;
+                    }
+                });
+                
+                canvas.addEventListener('mouseup', (e) => {
+                    if (e.button === 0) {
+                        this.mouseDown = false;
+                    }
+                });
+            },
+            
+            update: function() {
+                if (document.getElementById('menu').classList.contains('hidden') && 
+                    document.getElementById('upgradeMenu').classList.contains('hidden')) {
+                    
+                    this.updatePlayer();
+                    this.updateEnemies();
+                    this.updateProjectiles();
+                    this.updateCooldowns();
+                    this.updateCamera();
+                    this.checkRoomCleared();
+                }
+            },
+            
+            updatePlayer: function() {
+                // Movement
+                let moveX = 0;
+                let moveZ = 0;
+                
+                if (this.keys['w']) moveZ += 1;
+                if (this.keys['s']) moveZ -= 1;
+                if (this.keys['a']) moveX -= 1;
+                if (this.keys['d']) moveX += 1;
+                
+                if (moveX !== 0 || moveZ !== 0) {
+                    const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+                    moveX /= length;
+                    moveZ /= length;
+                    
+                    const speed = this.player.isDashing ? this.playerSpeed * 3 : this.playerSpeed;
+                    this.player.position.x += moveX * speed;
+                    this.player.position.z += moveZ * speed;
+                    
+                    // Clamp to arena bounds
+                    this.player.position.x = Math.max(-18, Math.min(18, this.player.position.x));
+                    this.player.position.z = Math.max(-18, Math.min(18, this.player.position.z));
+                }
+                
+                // Dash timing
+                if (this.player.isDashing) {
+                    this.player.dashTime--;
+                    if (this.player.dashTime <= 0) {
+                        this.player.isDashing = false;
+                    }
+                }
+                
+                // Rotate toward mouse
+                const pickInfo = this.scene.pick(this.scene.pointerX, this.scene.pointerY, (mesh) => {
+                    return mesh.name === "ground";
+                });
+                
+                if (pickInfo.hit) {
+                    const targetPos = pickInfo.pickedPoint;
+                    const dx = targetPos.x - this.player.position.x;
+                    const dz = targetPos.z - this.player.position.z;
+                    const angle = Math.atan2(dx, dz);
+                    this.player.mesh.rotation.y = angle;
+                }
+                
+                // Attack
+                if (this.mouseDown) {
+                    const now = Date.now();
+                    const attackDelay = 500 / this.attackSpeed;
+                    if (now - this.lastAttackTime > attackDelay) {
+                        this.attack();
+                        this.lastAttackTime = now;
+                    }
+                }
+            },
+            
+            updateEnemies: function() {
+                this.enemies.forEach((enemy, index) => {
+                    if (enemy.health <= 0) {
+                        enemy.mesh.dispose();
+                        this.enemies.splice(index, 1);
+                        this.totalEnemiesSlain++;
+                        this.updateEnemyCount();
+                        return;
+                    }
+                    
+                    // Move toward player
+                    const dx = this.player.position.x - enemy.position.x;
+                    const dz = this.player.position.z - enemy.position.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    
+                    if (dist > enemy.attackRange) {
+                        enemy.position.x += (dx / dist) * enemy.speed;
+                        enemy.position.z += (dz / dist) * enemy.speed;
+                    } else {
+                        // Attack player
+                        enemy.attackCooldown--;
+                        if (enemy.attackCooldown <= 0) {
+                            this.damagePlayer(enemy.damage);
+                            enemy.attackCooldown = 60;
+                        }
+                    }
+                    
+                    // Rotate toward player
+                    enemy.mesh.rotation.y = Math.atan2(dx, dz);
+                });
+            },
+            
+            updateProjectiles: function() {
+                this.projectiles.forEach((proj, index) => {
+                    proj.position.x += proj.velocity.x;
+                    proj.position.z += proj.velocity.z;
+                    proj.lifetime--;
+                    
+                    // Check enemy collision
+                    this.enemies.forEach(enemy => {
+                        const dx = enemy.position.x - proj.position.x;
+                        const dz = enemy.position.z - proj.position.z;
+                        const dist = Math.sqrt(dx * dx + dz * dz);
+                        
+                        if (dist < 1 && !proj.hit) {
+                            this.damageEnemy(enemy, proj.damage);
+                            proj.hit = true;
+                            proj.lifetime = 0;
+                        }
+                    });
+                    
+                    // Remove dead projectiles
+                    if (proj.lifetime <= 0) {
+                        proj.mesh.dispose();
+                        this.projectiles.splice(index, 1);
+                    }
+                });
+            },
+            
+            updateCooldowns: function() {
+                if (this.dashCooldown > 0) {
+                    this.dashCooldown--;
+                    const dashAbility = document.getElementById('dashAbility');
+                    const dashCooldownText = document.getElementById('dashCooldown');
+                    dashAbility.classList.add('cooldown');
+                    dashCooldownText.textContent = (this.dashCooldown / 60).toFixed(1) + 's';
+                    
+                    const dashBar = document.getElementById('dashBar');
+                    dashBar.style.width = ((this.dashMaxCooldown - this.dashCooldown) / this.dashMaxCooldown * 100) + '%';
+                } else {
+                    document.getElementById('dashAbility').classList.remove('cooldown');
+                    document.getElementById('dashCooldown').textContent = '';
+                    document.getElementById('dashBar').style.width = '100%';
+                }
+                
+                if (this.specialCooldown > 0) {
+                    this.specialCooldown--;
+                    const specialAbility = document.getElementById('specialAbility');
+                    const specialCooldownText = document.getElementById('specialCooldown');
+                    specialAbility.classList.add('cooldown');
+                    specialCooldownText.textContent = (this.specialCooldown / 60).toFixed(1) + 's';
+                } else {
+                    document.getElementById('specialAbility').classList.remove('cooldown');
+                    document.getElementById('specialCooldown').textContent = '';
+                }
+            },
+            
+            updateCamera: function() {
+                this.camera.target = this.player.position;
+            },
+            
+            attack: function() {
+                const projectile = BABYLON.MeshBuilder.CreateSphere("projectile", {
+                    diameter: 0.5
+                }, this.scene);
+                
+                const projMat = new BABYLON.StandardMaterial("projMat", this.scene);
+                projMat.emissiveColor = new BABYLON.Color3(1, 1, 0);
+                projectile.material = projMat;
+                
+                projectile.position = this.player.position.clone();
+                projectile.position.y = 1;
+                
+                const angle = this.player.mesh.rotation.y;
+                const speed = 0.5;
+                
+                this.projectiles.push({
+                    mesh: projectile,
+                    position: projectile.position,
+                    velocity: new BABYLON.Vector3(Math.sin(angle) * speed, 0, Math.cos(angle) * speed),
+                    lifetime: 120,
+                    damage: this.playerDamage * this.damageMultiplier,
+                    hit: false
+                });
+            },
+            
+            dash: function() {
+                if (this.dashCooldown > 0) return;
+                
+                this.player.isDashing = true;
+                this.player.dashTime = 15;
+                this.dashCooldown = this.dashMaxCooldown - this.dashCooldownReduction;
+            },
+            
+            useSpecial: function() {
+                if (this.specialCooldown > 0) return;
+                
+                // AOE attack
+                const angles = 8;
+                for (let i = 0; i < angles; i++) {
+                    const angle = (i / angles) * Math.PI * 2;
+                    
+                    const projectile = BABYLON.MeshBuilder.CreateSphere("projectile", {
+                        diameter: 0.7
+                    }, this.scene);
+                    
+                    const projMat = new BABYLON.StandardMaterial("projMat", this.scene);
+                    projMat.emissiveColor = new BABYLON.Color3(1, 0.5, 0);
+                    projectile.material = projMat;
+                    
+                    projectile.position = this.player.position.clone();
+                    projectile.position.y = 1;
+                    
+                    const speed = 0.4;
+                    
+                    this.projectiles.push({
+                        mesh: projectile,
+                        position: projectile.position,
+                        velocity: new BABYLON.Vector3(Math.sin(angle) * speed, 0, Math.cos(angle) * speed),
+                        lifetime: 90,
+                        damage: this.playerDamage * this.damageMultiplier * 1.5,
+                        hit: false
+                    });
+                }
+                
+                this.specialCooldown = this.specialMaxCooldown;
+            },
+            
+            damageEnemy: function(enemy, damage) {
+                enemy.health -= damage;
+                
+                // Lifesteal
+                if (this.lifeSteal > 0) {
+                    this.healPlayer(damage * this.lifeSteal);
+                }
+                
+                // Visual feedback
+                enemy.mesh.material.emissiveColor = new BABYLON.Color3(1, 0.5, 0.5);
+                setTimeout(() => {
+                    if (enemy.mesh) {
+                        enemy.mesh.material.emissiveColor = new BABYLON.Color3(0.3, 0.05, 0.05);
+                    }
+                }, 100);
+            },
+            
+            damagePlayer: function(damage) {
+                if (this.player.isDashing) return; // Invulnerable while dashing
+                
+                this.playerHealth -= damage;
+                this.updateHealthBar();
+                
+                if (this.playerHealth <= 0) {
+                    this.endRun(false);
+                }
+            },
+            
+            healPlayer: function(amount) {
+                this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + amount);
+                this.updateHealthBar();
+            },
+            
+            updateHealthBar: function() {
+                const healthBar = document.getElementById('healthBar');
+                const percent = (this.playerHealth / this.playerMaxHealth) * 100;
+                healthBar.style.width = percent + '%';
+            },
+            
+            updateEnemyCount: function() {
+                document.getElementById('enemyCount').textContent = this.enemies.length;
+            },
+            
+            checkRoomCleared: function() {
+                if (this.enemies.length === 0 && !this.roomCleared) {
+                    this.roomCleared = true;
+                    this.totalRoomsCleared++;
+                    setTimeout(() => this.showUpgradeMenu(), 1000);
+                }
+            },
+            
+            showUpgradeMenu: function() {
+                const upgradeMenu = document.getElementById('upgradeMenu');
+                const upgradesDiv = document.getElementById('upgrades');
+                upgradesDiv.innerHTML = '';
+                
+                const possibleUpgrades = [
+                    {
+                        title: "💪 Strength of Ares",
+                        description: "+50% Attack Damage",
+                        apply: () => { this.damageMultiplier += 0.5; }
+                    },
+                    {
+                        title: "❤️ Gift of Aphrodite",
+                        description: "+30 Max Health & Full Heal",
+                        apply: () => { 
+                            this.maxHealthBonus += 30;
+                            this.playerMaxHealth = 100 + this.maxHealthBonus;
+                            this.playerHealth = this.playerMaxHealth;
+                            this.updateHealthBar();
+                        }
+                    },
+                    {
+                        title: "⚡ Speed of Hermes",
+                        description: "Dash Cooldown -30%",
+                        apply: () => { this.dashCooldownReduction += 18; }
+                    },
+                    {
+                        title: "🩸 Vampiric Strike",
+                        description: "Lifesteal 15% of damage dealt",
+                        apply: () => { this.lifeSteal += 0.15; }
+                    },
+                    {
+                        title: "🔥 Fury of Zeus",
+                        description: "+30% Attack Speed",
+                        apply: () => { this.attackSpeed += 0.3; }
+                    },
+                    {
+                        title: "🛡️ Athena's Blessing",
+                        description: "+50 Max Health",
+                        apply: () => { 
+                            this.maxHealthBonus += 50;
+                            this.playerMaxHealth = 100 + this.maxHealthBonus;
+                            this.playerHealth = Math.min(this.playerHealth + 50, this.playerMaxHealth);
+                            this.updateHealthBar();
+                        }
+                    }
+                ];
+                
+                // Randomly select 3 upgrades
+                const shuffled = possibleUpgrades.sort(() => Math.random() - 0.5);
+                const selected = shuffled.slice(0, 3);
+                
+                selected.forEach(upgrade => {
+                    const div = document.createElement('div');
+                    div.className = 'upgrade-option';
+                    div.innerHTML = `
+                        <div class="upgrade-title">${upgrade.title}</div>
+                        <div class="upgrade-description">${upgrade.description}</div>
+                    `;
+                    div.onclick = () => {
+                        upgrade.apply();
+                        upgradeMenu.classList.add('hidden');
+                        this.nextRoom();
+                    };
+                    upgradesDiv.appendChild(div);
+                });
+                
+                upgradeMenu.classList.remove('hidden');
+            },
+            
+            nextRoom: function() {
+                this.currentRoom++;
+                this.roomCleared = false;
+                document.getElementById('roomNumber').textContent = this.currentRoom;
+                
+                // Clean up projectiles
+                this.projectiles.forEach(p => p.mesh.dispose());
+                this.projectiles = [];
+                
+                // Spawn more enemies
+                const enemyCount = 3 + this.currentRoom;
+                this.spawnEnemies(Math.min(enemyCount, 10));
+                
+                // Move player to center
+                this.player.position.x = 0;
+                this.player.position.z = 0;
+            },
+            
+            startRun: function() {
+                document.getElementById('menu').classList.add('hidden');
+                
+                // Reset player stats
+                this.playerHealth = 100;
+                this.playerMaxHealth = 100;
+                this.playerDamage = 20;
+                this.maxHealthBonus = 0;
+                this.damageMultiplier = 1;
+                this.dashCooldownReduction = 0;
+                this.lifeSteal = 0;
+                this.attackSpeed = 1;
+                
+                this.updateHealthBar();
+                
+                this.currentRoom = 1;
+                this.roomCleared = false;
+                document.getElementById('roomNumber').textContent = this.currentRoom;
+                
+                // Clean up
+                this.enemies.forEach(e => e.mesh.dispose());
+                this.projectiles.forEach(p => p.mesh.dispose());
+                this.enemies = [];
+                this.projectiles = [];
+                
+                // Start first room
+                this.spawnEnemies(3);
+                
+                // Reset player position
+                this.player.position.x = 0;
+                this.player.position.z = 0;
+            },
+            
+            endRun: function(victory) {
+                const menu = document.getElementById('menu');
+                menu.querySelector('h1').textContent = victory ? '🏆 VICTORY! 🏆' : '💀 DEFEATED 💀';
+                menu.querySelector('p').textContent = victory ? 
+                    `You escaped the underworld after ${this.currentRoom} rooms!` :
+                    `You fell at room ${this.currentRoom}. The underworld claims another soul...`;
+                
+                if (!victory) {
+                    this.totalRuns++;
+                }
+                
+                // Show stats
+                document.getElementById('stats').style.display = 'block';
+                document.getElementById('runsCompleted').textContent = this.totalRuns;
+                document.getElementById('roomsCleared').textContent = this.totalRoomsCleared;
+                document.getElementById('enemiesSlain').textContent = this.totalEnemiesSlain;
+                
+                menu.classList.remove('hidden');
+            }
+        };
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            game.init();
+        });
+    </script>
+</body>
+</html>
