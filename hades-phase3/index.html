@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Underworld Ascension — Phase 3</title>
+<script src="https://cdn.jsdelivr.net/npm/babylonjs@7.0.0/babylon.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/babylonjs-loaders@7.0.0/babylonjs.loaders.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/babylonjs-materials@7.0.0/babylonjs.materials.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --gold:#FFD700;--blood:#8B0000;--bronze:#CD7F32;
+  --dark:#0a0505;--text:#F5E6D3;--hp:#DC143C;
+}
+body{font-family:'Georgia',serif;background:var(--dark);color:var(--text);overflow:hidden}
+#gameCanvas{width:100%;height:100vh;display:block;touch-action:none}
+
+/* ── overlay ── */
+#ui{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1000}
+
+/* ── HUD ── */
+#hud{position:absolute;top:16px;left:16px;pointer-events:none}
+.hud-panel{
+  background:rgba(10,5,5,.92);border:2px solid var(--gold);
+  border-radius:8px;padding:14px 18px;min-width:260px;
+  box-shadow:0 0 18px rgba(255,215,0,.25)
+}
+.hud-label{font-size:11px;font-weight:700;color:var(--gold);letter-spacing:2px;text-transform:uppercase;margin-bottom:5px}
+.bar-wrap{width:240px;height:22px;background:rgba(0,0,0,.7);border:2px solid var(--bronze);border-radius:4px;overflow:hidden;position:relative}
+.bar-fill{height:100%;transition:width .25s}
+.bar-text{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;font-weight:700;color:#fff;text-shadow:1px 1px 3px #000}
+#hp-fill{background:linear-gradient(90deg,#ff4444,#cc0000)}
+.dash-charges{display:flex;gap:6px;margin-top:8px}
+.charge{width:34px;height:22px;background:rgba(0,0,0,.6);border:2px solid var(--bronze);border-radius:4px}
+.charge.ready{background:linear-gradient(180deg,#6B9BFF,#3060e0);border-color:var(--gold);box-shadow:0 0 8px rgba(65,105,225,.6)}
+
+/* ── Room info top-right ── */
+#room-info{
+  position:absolute;top:16px;right:16px;text-align:right;pointer-events:none;
+  background:rgba(10,5,5,.92);border:2px solid var(--gold);border-radius:8px;padding:14px 18px;
+  box-shadow:0 0 18px rgba(255,215,0,.25)
+}
+#room-name{font-size:17px;font-weight:700;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
+#room-sub{font-size:13px;color:var(--bronze)}
+
+/* ── Enemy count badge ── */
+#enemy-badge{
+  position:absolute;top:130px;right:16px;
+  background:rgba(139,0,0,.85);border:2px solid var(--gold);border-radius:20px;
+  padding:6px 18px;font-size:14px;font-weight:700;color:#fff;pointer-events:none;
+  transition:opacity .3s
+}
+#enemy-badge.hidden{opacity:0}
+
+/* ── AI state debug strip (bottom-left, small) ── */
+#ai-debug{
+  position:absolute;bottom:120px;left:16px;
+  font-size:11px;color:rgba(255,200,100,.7);pointer-events:none;
+  max-width:240px;line-height:1.7;font-family:monospace;
+}
+
+/* ── Ability bar ── */
+#abilities{
+  position:absolute;bottom:24px;left:50%;transform:translateX(-50%);
+  display:flex;gap:12px;pointer-events:none
+}
+.ab{
+  width:72px;height:72px;
+  background:rgba(10,5,5,.92);border:2px solid var(--gold);border-radius:10px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-size:11px;text-align:center;box-shadow:0 0 14px rgba(255,215,0,.2)
+}
+.ab-key{font-size:15px;font-weight:700;color:var(--gold);margin-bottom:3px}
+.ab.cd{opacity:.35;border-color:var(--bronze)}
+.cd-label{position:absolute;font-size:13px;font-weight:700;color:orangered;text-shadow:0 0 5px #f40}
+
+/* ── Floating damage numbers ── */
+#dmg-layer{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1400}
+.dmg{
+  position:absolute;font-size:22px;font-weight:900;color:#fff;
+  text-shadow:2px 2px 4px #000;pointer-events:none;
+  animation:floatUp .9s ease-out forwards
+}
+.dmg.crit{font-size:30px;color:var(--gold);text-shadow:0 0 8px rgba(255,215,0,.8)}
+@keyframes floatUp{0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-90px) scale(1.4)}}
+
+/* ── Currency HUD ── */
+#currency{
+  position:absolute;bottom:110px;right:16px;text-align:right;pointer-events:none;
+  background:rgba(10,5,5,.92);border:2px solid var(--gold);border-radius:8px;padding:10px 16px;
+  font-size:14px
+}
+#currency span{color:var(--gold);font-weight:700}
+
+/* ── Door prompt ── */
+#door-prompt{
+  position:absolute;bottom:115px;left:50%;transform:translateX(-50%);
+  background:rgba(10,5,5,.92);border:2px solid var(--gold);border-radius:8px;
+  padding:10px 26px;font-size:15px;color:var(--gold);pointer-events:none;
+  display:none;
+}
+
+/* ── Main Menu ── */
+#main-menu{
+  position:absolute;top:0;left:0;width:100%;height:100%;
+  background:linear-gradient(135deg,rgba(10,5,5,.98),rgba(26,10,10,.95));
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  pointer-events:auto;z-index:2000
+}
+#main-menu.hidden{display:none}
+.title{
+  font-family:'Georgia',serif;font-size:58px;font-weight:900;color:var(--gold);
+  text-transform:uppercase;letter-spacing:7px;margin-bottom:12px;
+  text-shadow:3px 3px 0 var(--blood),6px 6px 0 rgba(139,0,0,.5),0 0 40px rgba(255,215,0,.5)
+}
+.subtitle{font-size:20px;color:var(--bronze);font-style:italic;margin-bottom:36px;letter-spacing:2px}
+.btn{
+  font-family:'Georgia',serif;font-size:18px;font-weight:700;color:var(--text);
+  background:linear-gradient(135deg,var(--blood),#cc3333);border:3px solid var(--gold);
+  padding:16px 48px;border-radius:8px;cursor:pointer;transition:all .25s;
+  text-transform:uppercase;letter-spacing:2px;margin:8px;
+  box-shadow:0 4px 15px rgba(0,0,0,.5)
+}
+.btn:hover{background:linear-gradient(135deg,#cc3333,#ff5555);transform:translateY(-3px);box-shadow:0 6px 25px rgba(255,215,0,.5)}
+.key-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 32px;margin-top:28px;font-size:14px}
+.key-row{color:var(--bronze)}
+.key-tag{display:inline-block;background:rgba(0,0,0,.5);border:1px solid var(--gold);
+  padding:2px 10px;border-radius:4px;color:var(--gold);font-weight:700;margin-right:4px}
+.phase-badge{
+  margin-top:36px;background:rgba(0,0,0,.5);border:2px solid var(--bronze);
+  border-radius:8px;padding:12px 28px;font-size:13px;color:var(--bronze);text-align:center
+}
+.phase-badge b{color:var(--gold)}
+
+/* ── Loading ── */
+#loading{
+  position:absolute;top:0;left:0;width:100%;height:100%;background:var(--dark);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:3000
+}
+#loading.hidden{display:none}
+.loading-title{font-size:22px;color:var(--gold);margin-bottom:18px}
+.load-bar{width:400px;height:18px;background:rgba(0,0,0,.5);border:2px solid var(--gold);border-radius:9px;overflow:hidden}
+.load-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--gold),var(--bronze));transition:width .3s}
+
+/* ── Death ── */
+#death-screen{
+  position:absolute;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.88);display:none;flex-direction:column;
+  align-items:center;justify-content:center;z-index:2500;pointer-events:auto
+}
+#death-screen.show{display:flex}
+.death-title{font-size:52px;color:var(--blood);text-transform:uppercase;letter-spacing:5px;margin-bottom:20px}
+.death-stats{font-size:18px;color:var(--bronze);line-height:2;text-align:center;margin-bottom:30px}
+
+/* ── Room cleared banner ── */
+#room-cleared{
+  position:absolute;top:40%;left:50%;transform:translate(-50%,-50%);
+  font-size:36px;font-weight:900;color:var(--gold);text-transform:uppercase;
+  letter-spacing:6px;text-shadow:0 0 20px rgba(255,215,0,.8);
+  pointer-events:none;display:none;animation:fadeUp 2s ease forwards
+}
+@keyframes fadeUp{0%{opacity:0;transform:translate(-50%,-30px)} 30%{opacity:1;transform:translate(-50%,0)} 70%{opacity:1} 100%{opacity:0;transform:translate(-50%,-30px)}}
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+
+<div id="ui">
+  <!-- Loading -->
+  <div id="loading">
+    <div class="loading-title">Descending into the Underworld…</div>
+    <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
+  </div>
+
+  <!-- Main Menu -->
+  <div id="main-menu" class="hidden">
+    <div class="title">Underworld Ascension</div>
+    <div class="subtitle">Phase 3 — Advanced AI &amp; Swarm Combat</div>
+    <button class="btn" id="startBtn">Begin Your Escape</button>
+    <div class="key-grid">
+      <div class="key-row"><span class="key-tag">WASD</span> Move</div>
+      <div class="key-row"><span class="key-tag">Shift</span> Run</div>
+      <div class="key-row"><span class="key-tag">LMB</span> Attack</div>
+      <div class="key-row"><span class="key-tag">Space</span> Dash</div>
+      <div class="key-row"><span class="key-tag">E</span> Special AOE</div>
+      <div class="key-row"><span class="key-tag">Q</span> Cast</div>
+      <div class="key-row"><span class="key-tag">F</span> Open Chest</div>
+      <div class="key-row"><span class="key-tag">Enter</span> Use Door</div>
+    </div>
+    <div class="phase-badge">
+      <b>✅ Phase 1</b> — Room System · 5 types · Textures · Doors<br>
+      <b>✅ Phase 2</b> — Rigged Characters · 7 Animations · No Gliding<br>
+      <b>✅ Phase 3</b> — Full AI: Patrol · Chase · Retreat · Swarm · Ranged
+    </div>
+  </div>
+
+  <!-- HUD (hidden until game starts) -->
+  <div id="hud" style="display:none">
+    <div class="hud-panel">
+      <div class="hud-label">Zagreus</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" id="hp-fill" style="width:100%"></div>
+        <div class="bar-text" id="hp-text">100 / 100</div>
+      </div>
+      <div class="dash-charges" id="dash-charges">
+        <div class="charge ready"></div>
+        <div class="charge ready"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="room-info" style="display:none">
+    <div id="room-name">Chamber of Tartarus</div>
+    <div id="room-sub">Room 1 · 0 enemies</div>
+  </div>
+
+  <div id="enemy-badge" class="hidden">0 enemies remaining</div>
+
+  <div id="currency" style="display:none">
+    🌑 Darkness: <span id="c-dark">0</span> &nbsp;
+    💎 Gems: <span id="c-gems">0</span>
+  </div>
+
+  <div id="door-prompt">Press <b>Enter</b> to proceed</div>
+
+  <div id="abilities" style="display:none">
+    <div class="ab"><div class="ab-key">LMB</div>Attack</div>
+    <div class="ab" id="ab-dash"><div class="ab-key">SPC</div>Dash</div>
+    <div class="ab" id="ab-spec"><div class="ab-key">E</div>Special</div>
+    <div class="ab" id="ab-cast"><div class="ab-key">Q</div>Cast</div>
+  </div>
+
+  <div id="ai-debug"></div>
+  <div id="dmg-layer"></div>
+  <div id="room-cleared">⚔ Chamber Cleared ⚔</div>
+
+  <!-- Death screen -->
+  <div id="death-screen">
+    <div class="death-title">You have Fallen</div>
+    <div class="death-stats" id="death-stats"></div>
+    <button class="btn" id="retryBtn">Try Again</button>
+  </div>
+</div>
+
+<!-- ═══ Core Engine ═══ -->
+<script src="js/Engine.js"></script>
+
+<!-- ═══ Phase 1 Systems ═══ -->
+<script src="js/RoomManager.js"></script>
+<script src="js/DoorSystem.js"></script>
+<script src="js/CameraController.js"></script>
+<script src="js/ChestSystem.js"></script>
+
+<!-- ═══ Phase 2 Systems ═══ -->
+<script src="js/AnimationSystem.js"></script>
+<script src="js/CharacterRig.js"></script>
+
+<!-- ═══ Phase 3 Systems ═══ -->
+<script src="js/EnemyAI.js"></script>
+
+<!-- ═══ Entities ═══ -->
+<script src="js/Player.js"></script>
+<script src="js/Enemy.js"></script>
+<script src="js/Projectile.js"></script>
+
+<!-- ═══ Support ═══ -->
+<script src="js/ParticleSystem.js"></script>
+<script src="js/CollisionSystem.js"></script>
+<script src="js/InputManager.js"></script>
+
+<!-- ═══ Game Controller ═══ -->
+<script>
+/* ───────────────────────────────────────────────────────────────────────────
+   GameController  — wires all systems together
+─────────────────────────────────────────────────────────────────────────── */
+class GameController {
+    constructor() {
+        this.engine      = null;
+        this.player      = null;
+        this.enemies     = [];
+        this.projectiles = [];
+
+        this.darkness    = 0;
+        this.gems        = 0;
+
+        this.roomDepth   = 0;
+        this.totalKills  = 0;
+        this.roomsCleared= 0;
+
+        this.paused      = false;
+        this.started     = false;
+        this.roomClearing= false;  // debounce
+    }
+
+    // ── Bootstrap ────────────────────────────────────────────────────────
+    async init() {
+        this.setLoad(10, 'Creating engine…');
+        this.engine = new Engine();
+        this.engine.init();
+
+        this.setLoad(30, 'Initialising systems…');
+        this.initSystems();
+
+        this.setLoad(60, 'Generating textures…');
+        await this.delay(400);
+
+        this.setLoad(90, 'Ready!');
+        await this.delay(200);
+
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('main-menu').classList.remove('hidden');
+    }
+
+    initSystems() {
+        // Phase 1
+        new RoomManager(this.engine);
+        new DoorSystem(this.engine);
+        new CameraController(this.engine);
+        new ChestSystem(this.engine);
+
+        // Phase 2
+        new AnimationSystem(this.engine);
+
+        // Phase 3 — SwarmManager must be created before any Enemy
+        new SwarmManager(this.engine);
+
+        // Support
+        new ParticleSystem(this.engine);
+        new CollisionSystem(this.engine);
+        new InputManager(this.engine);
+
+        this.bindEvents();
+    }
+
+    // ── Events ───────────────────────────────────────────────────────────
+    bindEvents() {
+        // Start / retry
+        document.getElementById('startBtn').addEventListener('click',  () => this.startGame());
+        document.getElementById('retryBtn').addEventListener('click',  () => this.restartGame());
+
+        // Engine frame update
+        this.engine.on('engine:update', (d) => {
+            if (this.started && !this.paused) this.update(d.deltaTime);
+        });
+
+        // Input
+        this.engine.on('input:mousedown', (d) => {
+            if (d.button === 0 && this.player && this.started) {
+                const a = this.player.attack();
+                if (a) this.spawnProjectile(a);
+            }
+        });
+
+        this.engine.on('input:keydown', (d) => {
+            if (!this.player || !this.started) return;
+            switch (d.key) {
+                case ' ':          this.player.dash(); break;
+                case 'e': { const s = this.player.useSpecial(); if (s) this.spawnSpecial(s); break; }
+                case 'q': { const c = this.player.useCast();    if (c) this.spawnProjectile(c); break; }
+                case 'enter':
+                case 'f':          this.tryInteract(); break;
+            }
+            this.updateDashUI();
+        });
+
+        // Enemy events
+        this.engine.on('enemy:death',    (d) => this.onEnemyDeath(d.enemy));
+        this.engine.on('enemy:attack',   (d) => {
+            if (this.player && this.player.active && !this.player.isDashing)
+                this.player.takeDamage(d.damage);
+        });
+
+        // Ranged enemy fires a projectile
+        this.engine.on('enemy:projectile', (data) => {
+            const p = new Projectile(this.engine, data);
+            this.projectiles.push(p);
+        });
+
+        // Currency drops
+        this.engine.on('currency:drop',  (d) => {
+            if (d.type === 'gems')     this.gems     += d.amount;
+            else                        this.darkness += d.amount;
+            this.updateCurrencyUI();
+        });
+
+        // Player events
+        this.engine.on('player:damage',  (d) => this.updateHealthUI(d));
+        this.engine.on('player:heal',    (d) => this.updateHealthUI(d));
+        this.engine.on('player:death',   ()  => this.onPlayerDeath());
+
+        // Door transition
+        this.engine.on('door:transition', () => this.nextRoom());
+        this.engine.on('chest:opened',    (d) => this.onChestReward(d.reward));
+    }
+
+    // ── Game start ───────────────────────────────────────────────────────
+    startGame() {
+        document.getElementById('main-menu').classList.add('hidden');
+        ['hud','room-info','currency','abilities'].forEach(id =>
+            document.getElementById(id).style.display = '');
+
+        this.started = true;
+        this.roomDepth = 0;
+        this.loadRoom();
+    }
+
+    restartGame() {
+        document.getElementById('death-screen').classList.remove('show');
+        this.cleanupRoom();
+        this.darkness = 0; this.gems = 0; this.totalKills = 0; this.roomsCleared = 0;
+        this.roomDepth = 0;
+        this.updateCurrencyUI();
+        this.loadRoom();
+    }
+
+    // ── Room lifecycle ───────────────────────────────────────────────────
+    loadRoom() {
+        this.roomClearing = false;
+
+        const rm = this.engine.getSystem('room');
+        const type = rm.getNextRoomType();
+        this.currentRoomType = type;
+        rm.createRoom(type);
+        this.roomDepth = rm.roomDepth;
+
+        // Reset door system
+        const ds = this.engine.getSystem('doors');
+        if (ds) ds.clearAllDoors();
+
+        // Create exit door (back wall centre)
+        const cfg  = rm.roomConfigs[type];
+        const size = cfg.size;
+        const doorZ = size.depth / 2 - 1.5;
+        if (ds) {
+            const doorType = (type === 'battle' || type === 'boss') ? 'locked' : 'open';
+            ds.createDoor(new BABYLON.Vector3(0, 2, doorZ), doorType);
+        }
+
+        // Place player
+        if (!this.player) {
+            this.player = new Player(this.engine);
+            // Register player as collidable target for enemy projectiles
+            const col = this.engine.getSystem('collision');
+            if (col) col.register(this.player, 'player');
+        }
+        this.player.position.set(0, 0, 0);
+        this.player.health   = this.player.maxHealth;
+        this.player.active   = true;
+        if (this.player.rig) this.player.rig.setPosition(0,0,0);
+
+        // Camera target
+        const cam = this.engine.getSystem('camera');
+        if (cam) cam.setTarget(this.player);
+
+        // Clear swarm
+        const swarm = this.engine.getSystem('swarm');
+        if (swarm) swarm.clear();
+        this.enemies = [];
+
+        // Spawn enemies
+        if (type === 'battle') {
+            const count = 3 + Math.floor(this.roomDepth * 0.7);
+            this.spawnEnemies(Math.min(count, 10), rm, type);
+        } else if (type === 'boss') {
+            this.spawnEnemies(1, rm, type, true);
+        }
+
+        // Spawn chest (30% chance in battle, 100% in boss)
+        const chestSys = this.engine.getSystem('chests');
+        if (chestSys) {
+            chestSys.clearAllChests();
+            const chestChance = type === 'boss' ? 1.0 : 0.35;
+            if (Math.random() < chestChance) {
+                const cp = rm.getChestSpawnPoint();
+                if (cp) chestSys.createChest(cp);
+            }
+        }
+
+        // Update UI
+        this.updateRoomUI(cfg.name, type);
+        this.updateHealthUI({ health: this.player.health, maxHealth: this.player.maxHealth });
+        this.updateEnemyBadge();
+    }
+
+    spawnEnemies(count, rm, roomType, boss = false) {
+        const points = rm.getEnemySpawnPoints(count);
+        const typePool = (roomType === 'boss')
+            ? ['tank']
+            : ['grunt','grunt','fast','ranged'];
+
+        points.forEach(pos => {
+            const t = boss ? 'tank' :
+                (this.roomDepth > 4 ? typePool[Math.floor(Math.random() * typePool.length)]
+                                    : (Math.random() < 0.3 ? 'fast' : 'grunt'));
+            const e = new Enemy(this.engine, t, pos);
+            this.enemies.push(e);
+        });
+
+        this.updateEnemyBadge();
+    }
+
+    cleanupRoom() {
+        this.enemies.forEach(e => { if (e.active) e.dispose(); });
+        this.enemies = [];
+
+        this.projectiles.forEach(p => { if (p.active) p.destroy(); });
+        this.projectiles = [];
+
+        const chestSys = this.engine.getSystem('chests');
+        if (chestSys) chestSys.clearAllChests();
+
+        const ds = this.engine.getSystem('doors');
+        if (ds) ds.clearAllDoors();
+
+        const swarm = this.engine.getSystem('swarm');
+        if (swarm) swarm.clear();
+
+        const col = this.engine.getSystem('collision');
+        if (col) col.clear();
+    }
+
+    nextRoom() {
+        this.cleanupRoom();
+        this.roomsCleared++;
+        this.loadRoom();
+    }
+
+    // ── Per-frame update ─────────────────────────────────────────────────
+    update(dt) {
+        const input = this.engine.getSystem('input');
+        const swarm = this.engine.getSystem('swarm');
+        const anim  = this.engine.getSystem('animation');
+        const cam   = this.engine.getSystem('camera');
+
+        // Player
+        if (this.player?.active) this.player.update(dt, input);
+
+        // Swarm AI (drives all enemies)
+        if (swarm && this.player) swarm.update(dt, this.player.position);
+
+        // Per-enemy non-AI update (health bars etc.)
+        this.enemies.forEach(e => { if (e.active) e.update(dt); });
+
+        // Animation system
+        if (anim) anim.update(dt);
+
+        // Projectiles
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            const p = this.projectiles[i];
+            if (p.active) p.update(dt);
+            else          this.projectiles.splice(i, 1);
+        }
+
+        // Collision: player projectiles → enemies
+        const col = this.engine.getSystem('collision');
+        if (col) {
+            col.checkLayerCollision('projectiles','enemies', (proj, enemy) => {
+                if (!proj.hit && proj.active && enemy.active) {
+                    const dmg = proj.damage;
+                    enemy.takeDamage(dmg);
+                    proj.onHit();
+                    this.showDamageNumber(enemy.position, dmg);
+                    this.totalKills += enemy.active ? 0 : 1;
+                }
+            });
+
+            // Enemy projectiles → player
+            if (this.player?.active) {
+                col.checkLayerCollision('enemyProjectiles','player', (proj, player) => {
+                    if (!proj.hit && proj.active && !player.isDashing) {
+                        player.takeDamage(proj.damage);
+                        proj.onHit();
+                    }
+                });
+            }
+        }
+
+        // Camera
+        if (cam) cam.update(dt);
+
+        // Door proximity prompt
+        this.checkDoorPrompt();
+
+        // AI debug strip
+        this.updateAIDebug();
+
+        // Cooldown UI
+        this.updateAbilityCooldowns();
+    }
+
+    // ── Combat helpers ───────────────────────────────────────────────────
+    spawnProjectile(data) {
+        const p = new Projectile(this.engine, data);
+        this.projectiles.push(p);
+    }
+
+    spawnSpecial(data) {
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            this.spawnProjectile({
+                position: data.position,
+                damage:   data.damage,
+                rotation: angle,
+                speed:    0.4,
+                lifetime: 90,
+                radius:   0.3,
+                color:    new BABYLON.Color3(1, 0.5, 0)
+            });
+        }
+        const parts = this.engine.getSystem('particle');
+        if (parts) parts.createFireBurst(data.position, 1.5);
+    }
+
+    // ── Interaction ───────────────────────────────────────────────────────
+    tryInteract() {
+        if (!this.player) return;
+        const pos = this.player.position;
+
+        // Chest?
+        const chestSys = this.engine.getSystem('chests');
+        if (chestSys) {
+            const chest = chestSys.getNearbyChest(pos, 3);
+            if (chest) { chestSys.openChest(chest); return; }
+        }
+
+        // Door?
+        const ds = this.engine.getSystem('doors');
+        if (ds) {
+            const door = ds.getNearbyDoor(pos, 3.5);
+            if (door) ds.triggerDoorTransition(door);
+        }
+    }
+
+    checkDoorPrompt() {
+        const ds  = this.engine.getSystem('doors');
+        const prompt = document.getElementById('door-prompt');
+        if (!ds || !this.player || !prompt) return;
+        const door = ds.getNearbyDoor(this.player.position, 3.5);
+        prompt.style.display = door ? 'block' : 'none';
+    }
+
+    onChestReward(reward) {
+        if (reward.type === 'darkness') this.darkness += reward.amount;
+        if (reward.type === 'gems')     this.gems     += reward.amount;
+        this.updateCurrencyUI();
+        console.log(`[Chest] Rewarded: ${reward.amount} ${reward.type}`);
+    }
+
+    // ── Enemy / room cleared ──────────────────────────────────────────────
+    onEnemyDeath(enemy) {
+        const i = this.enemies.indexOf(enemy);
+        if (i > -1) this.enemies.splice(i, 1);
+        this.totalKills++;
+        this.updateEnemyBadge();
+
+        const active = this.enemies.filter(e => e.active).length;
+        if (active === 0 && !this.roomClearing) {
+            this.roomClearing = true;
+            this.onRoomCleared();
+        }
+    }
+
+    onRoomCleared() {
+        const rm = this.engine.getSystem('room');
+        if (rm) rm.markRoomCleared();  // unlocks doors
+
+        const banner = document.getElementById('room-cleared');
+        banner.style.display = 'block';
+        setTimeout(() => banner.style.display = 'none', 2200);
+    }
+
+    onPlayerDeath() {
+        const el = document.getElementById('death-screen');
+        el.classList.add('show');
+        document.getElementById('death-stats').innerHTML =
+            `Rooms cleared: <b>${this.roomsCleared}</b><br>` +
+            `Enemies slain: <b>${this.totalKills}</b><br>` +
+            `Darkness: <b>${this.darkness}</b> &nbsp; Gems: <b>${this.gems}</b>`;
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────
+    updateHealthUI(d) {
+        const pct = Math.max(0, d.health / d.maxHealth) * 100;
+        document.getElementById('hp-fill').style.width = pct + '%';
+        document.getElementById('hp-text').textContent =
+            `${Math.max(0,Math.floor(d.health))} / ${d.maxHealth}`;
+    }
+
+    updateDashUI() {
+        if (!this.player) return;
+        const charges = document.querySelectorAll('#dash-charges .charge');
+        charges.forEach((c, i) =>
+            c.classList.toggle('ready', i < this.player.dashCharges));
+    }
+
+    updateRoomUI(name, type) {
+        const typeLabel = {
+            battle:'⚔ Battle Chamber', boss:'💀 Boss Arena',
+            rest:'🌿 Sanctuary', hub:'🏛 House of Hades', final:'☀ Gates of Olympus'
+        }[type] || name;
+        document.getElementById('room-name').textContent = typeLabel;
+        document.getElementById('room-sub').textContent =
+            `Room ${this.roomDepth}`;
+    }
+
+    updateEnemyBadge() {
+        const active = this.enemies.filter(e => e.active).length;
+        const badge  = document.getElementById('enemy-badge');
+        const sub    = document.getElementById('room-sub');
+        badge.textContent = `${active} enem${active===1?'y':'ies'} remaining`;
+        badge.classList.toggle('hidden', active === 0);
+        sub.textContent   = `Room ${this.roomDepth} · ${active} enemies`;
+    }
+
+    updateCurrencyUI() {
+        document.getElementById('c-dark').textContent = this.darkness;
+        document.getElementById('c-gems').textContent = this.gems;
+    }
+
+    updateAbilityCooldowns() {
+        if (!this.player) return;
+        const cd  = (frames, el) => {
+            const sec = Math.ceil(frames / 60);
+            const div = document.getElementById(el);
+            if (!div) return;
+            div.classList.toggle('cd', frames > 0);
+        };
+        cd(this.player.dashCooldown,    'ab-dash');
+        cd(this.player.specialCooldown, 'ab-spec');
+        cd(this.player.castCooldown,    'ab-cast');
+        this.updateDashUI();
+    }
+
+    updateAIDebug() {
+        const swarm = this.engine.getSystem('swarm');
+        if (!swarm) return;
+        const lines = [];
+        let count = 0;
+        for (const [enemy, brain] of swarm.brains) {
+            if (!enemy.active || count > 5) break;
+            lines.push(`[${enemy.type}] ${brain.state}`);
+            count++;
+        }
+        document.getElementById('ai-debug').textContent = lines.join('\n');
+    }
+
+    showDamageNumber(pos3d, damage) {
+        const layer = document.getElementById('dmg-layer');
+        if (!layer) return;
+
+        try {
+            const cam     = this.engine.scene.activeCamera;
+            const engine  = this.engine.engine;
+            const screenPos = BABYLON.Vector3.Project(
+                pos3d.add(new BABYLON.Vector3(0, 2, 0)),
+                BABYLON.Matrix.Identity(),
+                this.engine.scene.getTransformMatrix(),
+                cam.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight())
+            );
+
+            const div = document.createElement('div');
+            div.className   = 'dmg' + (damage >= 20 ? ' crit' : '');
+            div.textContent = Math.floor(damage);
+            div.style.left  = screenPos.x + 'px';
+            div.style.top   = screenPos.y + 'px';
+            layer.appendChild(div);
+            setTimeout(() => div.remove(), 900);
+        } catch(e) { /* ignore projection errors */ }
+    }
+
+    setLoad(pct, msg) {
+        document.getElementById('load-fill').style.width = pct + '%';
+        document.querySelector('.loading-title').textContent = msg;
+    }
+
+    delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+    const game = new GameController();
+    await game.init();
+    window.game = game;
+});
+</script>
+</body>
+</html>
