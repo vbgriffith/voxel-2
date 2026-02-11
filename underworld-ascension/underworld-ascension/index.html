@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Underworld Ascension</title>
+<script src="https://cdn.jsdelivr.net/npm/babylonjs@7.0.0/babylon.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/babylonjs-loaders@7.0.0/babylonjs.loaders.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/babylonjs-materials@7.0.0/babylonjs.materials.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --gold:#FFD700; --blood:#8B0000; --bronze:#CD7F32;
+  --dark:#080404; --text:#F5E6D3;
+}
+body { font-family:'Georgia',serif; background:var(--dark); color:var(--text); overflow:hidden; }
+#c  { width:100vw; height:100vh; display:block; touch-action:none; }
+
+/* ── panels ── */
+.panel {
+  background:rgba(8,4,4,.93);
+  border:2px solid var(--gold);
+  border-radius:8px;
+  box-shadow:0 0 20px rgba(255,215,0,.18);
+}
+
+/* ── HUD ── */
+#hud { position:absolute; top:14px; left:14px; pointer-events:none; display:none; }
+#hud .panel { padding:12px 16px; min-width:250px; }
+.lbl { font-size:11px; font-weight:700; color:var(--gold); letter-spacing:2px; text-transform:uppercase; margin-bottom:4px; }
+.bwrap { width:230px; height:20px; background:rgba(0,0,0,.7); border:2px solid var(--bronze); border-radius:3px; overflow:hidden; position:relative; }
+#hpf  { height:100%; background:linear-gradient(90deg,#cc0000,#ff4444); transition:width .2s; }
+.btext{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:11px; font-weight:700; color:#fff; text-shadow:1px 1px 3px #000; }
+.charges{ display:flex; gap:5px; margin-top:7px; }
+.ch { width:32px; height:18px; background:rgba(0,0,0,.6); border:2px solid var(--bronze); border-radius:3px; transition:all .2s; }
+.ch.on{ background:linear-gradient(180deg,#5588ff,#2255dd); border-color:var(--gold); box-shadow:0 0 6px #4477ee; }
+
+/* ── Room info ── */
+#rinfo { position:absolute; top:14px; right:14px; pointer-events:none; display:none; }
+#rinfo .panel { padding:12px 16px; text-align:right; min-width:200px; }
+#rname { font-size:16px; font-weight:700; color:var(--gold); letter-spacing:1px; margin-bottom:5px; }
+#rsub  { font-size:13px; color:var(--bronze); }
+
+/* ── Enemy badge ── */
+#ebadge {
+  position:absolute; top:120px; right:14px; display:none;
+  padding:5px 16px; font-size:13px; font-weight:700;
+  background:rgba(139,0,0,.85); border:2px solid var(--gold); border-radius:20px; color:#fff;
+  pointer-events:none;
+}
+
+/* ── Currency ── */
+#currency { position:absolute; bottom:105px; right:14px; pointer-events:none; display:none; }
+#currency .panel { padding:9px 14px; font-size:13px; }
+#currency span { color:var(--gold); font-weight:700; }
+
+/* ── Boon icons strip ── */
+#boon-strip {
+  position:absolute; bottom:105px; left:14px; display:flex; gap:6px;
+  pointer-events:none;
+}
+.boon-icon {
+  width:34px; height:34px; border-radius:50%; border:2px solid var(--gold);
+  display:flex; align-items:center; justify-content:center; font-size:18px;
+  background:rgba(8,4,4,.85);
+}
+
+/* ── Ability bar ── */
+#abs {
+  position:absolute; bottom:22px; left:50%; transform:translateX(-50%);
+  display:none; gap:10px;
+}
+.ab {
+  width:68px; height:68px;
+  background:rgba(8,4,4,.93); border:2px solid var(--gold); border-radius:9px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-size:11px; text-align:center; box-shadow:0 0 12px rgba(255,215,0,.18);
+}
+.abk { font-size:14px; font-weight:700; color:var(--gold); margin-bottom:3px; }
+.ab.cd { opacity:.3; border-color:var(--bronze); }
+
+/* ── Damage numbers ── */
+#dmgl { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1400; }
+.dn { position:absolute; font-size:20px; font-weight:900; color:#fff; text-shadow:1px 1px 4px #000;
+      pointer-events:none; animation:fu .85s ease-out forwards; }
+.dn.crit { font-size:28px; color:var(--gold); text-shadow:0 0 8px rgba(255,215,0,.9); }
+@keyframes fu { 0%{opacity:1;transform:translateY(0)} 100%{opacity:0;transform:translateY(-80px)} }
+
+/* ── Interact prompt ── */
+#iprompt {
+  position:absolute; bottom:105px; left:50%; transform:translateX(-50%);
+  padding:9px 24px; font-size:14px; color:var(--gold); display:none; pointer-events:none;
+}
+
+/* ── Hazard flash ── */
+#hflash {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:rgba(255,100,0,.35); pointer-events:none; display:none; z-index:1300;
+}
+
+/* ── Room cleared ── */
+#rcleared {
+  position:absolute; top:40%; left:50%; transform:translate(-50%,-50%);
+  font-size:34px; font-weight:900; color:var(--gold); text-transform:uppercase;
+  letter-spacing:5px; text-shadow:0 0 20px rgba(255,215,0,.8);
+  pointer-events:none; display:none; animation:rcAnim 2.2s ease forwards;
+}
+@keyframes rcAnim {
+  0%  { opacity:0; transform:translate(-50%,-40px); }
+  20% { opacity:1; transform:translate(-50%,0); }
+  75% { opacity:1; }
+  100%{ opacity:0; transform:translate(-50%,-20px); }
+}
+
+/* ── AI debug strip ── */
+#aidbg {
+  position:absolute; bottom:110px; left:14px; font-size:10px;
+  color:rgba(255,200,100,.55); pointer-events:none; font-family:monospace;
+  line-height:1.7; max-width:200px;
+}
+
+/* ── Boon selection ── */
+#boonui {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:rgba(0,0,0,.82); display:none; flex-direction:column;
+  align-items:center; justify-content:center; z-index:1800; pointer-events:auto;
+}
+#boonui.show { display:flex; }
+.boon-title { font-size:30px; font-weight:900; color:var(--gold); text-transform:uppercase; letter-spacing:4px; margin-bottom:6px; }
+.boon-sub   { font-size:16px; color:var(--bronze); margin-bottom:28px; font-style:italic; }
+.boon-cards { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; max-width:700px; }
+.bcard {
+  width:190px; padding:20px; cursor:pointer; text-align:center;
+  transition:all .25s; border-radius:10px;
+}
+.bcard:hover { transform:translateY(-6px) scale(1.03); }
+.bc-god   { font-size:13px; font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-bottom:6px; }
+.bc-emoji { font-size:34px; margin-bottom:10px; }
+.bc-name  { font-size:17px; font-weight:700; color:var(--gold); margin-bottom:6px; }
+.bc-desc  { font-size:12px; color:var(--text); opacity:.85; line-height:1.4; }
+
+/* ── Dialogue ── */
+#dialoguebox {
+  position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+  width:min(780px,90%); display:none; z-index:1900; pointer-events:auto;
+}
+#dialoguebox.show { display:block; }
+#dialoguebox .panel { padding:20px 24px; }
+.dlg-top { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+.dlg-portrait {
+  font-size:38px; width:54px; height:54px;
+  display:flex; align-items:center; justify-content:center;
+  border:2px solid var(--gold); border-radius:50%; background:rgba(0,0,0,.6);
+}
+.dlg-name  { font-size:18px; font-weight:700; color:var(--gold); }
+#dlg-text  { font-size:15px; line-height:1.6; margin-bottom:14px; min-height:46px; }
+.dlg-choices { display:flex; flex-direction:column; gap:6px; }
+.dlg-choice {
+  font-family:'Georgia',serif; font-size:14px; color:var(--text);
+  background:rgba(255,215,0,.07); border:1px solid rgba(255,215,0,.25);
+  border-radius:5px; padding:8px 14px; cursor:pointer; text-align:left; transition:all .2s;
+}
+.dlg-choice:hover { background:rgba(255,215,0,.18); border-color:var(--gold); color:var(--gold); }
+
+/* ── Mirror of Night ── */
+#mirrorui {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:rgba(0,0,0,.88); display:none; flex-direction:column;
+  align-items:center; justify-content:center; z-index:2000; pointer-events:auto;
+}
+#mirrorui.show { display:flex; }
+.mir-title { font-size:28px; font-weight:900; color:var(--gold); text-transform:uppercase; letter-spacing:3px; margin-bottom:6px; }
+.mir-dark  { font-size:14px; color:var(--bronze); margin-bottom:24px; }
+.mir-grid  { display:grid; grid-template-columns:1fr 1fr; gap:12px; max-width:620px; width:90%; margin-bottom:22px; }
+.mir-row   { padding:14px 18px; cursor:pointer; border-radius:8px; transition:all .2s; }
+.mir-row:hover { box-shadow:0 0 18px rgba(255,215,0,.35) !important; }
+.mir-row.maxed { opacity:.45; cursor:default; }
+.mir-uname { font-size:15px; font-weight:700; color:var(--gold); margin-bottom:3px; }
+.mir-udesc { font-size:12px; color:var(--text); opacity:.8; }
+.mir-ucost { font-size:12px; color:var(--bronze); margin-top:4px; }
+.mir-close {
+  font-family:'Georgia',serif; font-size:15px; color:var(--text);
+  background:transparent; border:2px solid var(--bronze);
+  padding:9px 28px; border-radius:6px; cursor:pointer; transition:all .2s;
+}
+.mir-close:hover { border-color:var(--gold); color:var(--gold); }
+
+/* ── Main menu ── */
+#menu {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:linear-gradient(135deg,rgba(8,4,4,.98),rgba(20,8,8,.96));
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  pointer-events:auto; z-index:2500;
+}
+#menu.hidden { display:none; }
+.mtitle {
+  font-size:56px; font-weight:900; color:var(--gold); text-transform:uppercase;
+  letter-spacing:7px; margin-bottom:10px;
+  text-shadow:3px 3px 0 var(--blood), 0 0 40px rgba(255,215,0,.4);
+}
+.msub { font-size:18px; color:var(--bronze); font-style:italic; margin-bottom:32px; letter-spacing:2px; }
+.mbtn {
+  font-family:'Georgia',serif; font-size:17px; font-weight:700; color:var(--text);
+  background:linear-gradient(135deg,var(--blood),#cc3333); border:2px solid var(--gold);
+  padding:15px 46px; border-radius:8px; cursor:pointer; margin:8px;
+  text-transform:uppercase; letter-spacing:2px;
+  box-shadow:0 4px 15px rgba(0,0,0,.5); transition:all .25s;
+}
+.mbtn:hover { background:linear-gradient(135deg,#cc3333,#ff5555); transform:translateY(-3px); box-shadow:0 6px 25px rgba(255,215,0,.5); }
+.mkeys { display:grid; grid-template-columns:1fr 1fr; gap:7px 28px; margin-top:26px; font-size:13px; }
+.mkey  { color:var(--bronze); }
+.kt {
+  display:inline-block; background:rgba(0,0,0,.5); border:1px solid var(--gold);
+  padding:1px 8px; border-radius:3px; color:var(--gold); font-weight:700; margin-right:4px;
+}
+.mpatch {
+  margin-top:28px; background:rgba(0,0,0,.5); border:2px solid var(--bronze);
+  border-radius:8px; padding:12px 24px; font-size:12px; color:var(--bronze);
+  text-align:center; line-height:1.9;
+}
+.mpatch b { color:var(--gold); }
+
+/* ── Loading ── */
+#loading {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:var(--dark); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; z-index:3000;
+}
+#loading.h { display:none; }
+.ltit { font-size:20px; color:var(--gold); margin-bottom:16px; }
+.lbar { width:380px; height:16px; background:rgba(0,0,0,.5); border:2px solid var(--gold); border-radius:8px; overflow:hidden; }
+.lfill{ height:100%; width:0; background:linear-gradient(90deg,var(--gold),var(--bronze)); transition:width .3s; }
+
+/* ── Death ── */
+#death {
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background:rgba(0,0,0,.9); display:none; flex-direction:column;
+  align-items:center; justify-content:center; z-index:2600; pointer-events:auto;
+}
+#death.show { display:flex; }
+.dtit   { font-size:48px; color:var(--blood); text-transform:uppercase; letter-spacing:5px; margin-bottom:18px; }
+.dstats { font-size:17px; color:var(--bronze); line-height:2.1; text-align:center; margin-bottom:26px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="ltit" id="ltxt">Entering the Underworld…</div>
+  <div class="lbar"><div class="lfill" id="lfill"></div></div>
+</div>
+
+<!-- Main Menu -->
+<div id="menu" class="hidden">
+  <div class="mtitle">Underworld Ascension</div>
+  <div class="msub">All Phases — Complete Edition</div>
+  <button class="mbtn" id="startBtn">Begin Your Escape</button>
+  <div class="mkeys">
+    <div class="mkey"><span class="kt">WASD</span>Move</div>
+    <div class="mkey"><span class="kt">Shift</span>Run</div>
+    <div class="mkey"><span class="kt">LMB</span>Attack</div>
+    <div class="mkey"><span class="kt">Space</span>Dash</div>
+    <div class="mkey"><span class="kt">E</span>Special AOE</div>
+    <div class="mkey"><span class="kt">Q</span>Cast</div>
+    <div class="mkey"><span class="kt">F / Enter</span>Interact / Door</div>
+    <div class="mkey"><span class="kt">Tab</span>Mirror of Night</div>
+  </div>
+  <div class="mpatch">
+    <b>✅ Phase 1</b> — 5 Room Types · Procedural Textures · Door System · Camera Lock<br>
+    <b>✅ Phase 2</b> — Rigged Characters (15 parts) · 7 Animations · No Gliding<br>
+    <b>✅ Phase 3</b> — Full AI: Patrol → Chase → Retreat · Swarm · Ranged Enemies<br>
+    <b>✅ Phase 4</b> — NPCs · Branching Dialogue · Economy · Boon Selection<br>
+    <b>✅ Phase 5</b> — Hazards · Spike Traps · Fire Vents · Polish
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="panel">
+    <div class="lbl">Zagreus</div>
+    <div class="bwrap">
+      <div id="hpf" style="width:100%"></div>
+      <div class="btext" id="hptxt">100 / 100</div>
+    </div>
+    <div class="charges" id="charges"></div>
+  </div>
+</div>
+
+<!-- Room info -->
+<div id="rinfo">
+  <div class="panel">
+    <div id="rname">—</div>
+    <div id="rsub">—</div>
+  </div>
+</div>
+
+<!-- Enemy badge -->
+<div id="ebadge"></div>
+
+<!-- Currency -->
+<div id="currency">
+  <div class="panel">🌑 <span id="cdark">0</span> &nbsp; 💎 <span id="cgems">0</span></div>
+</div>
+
+<!-- Active boon strip -->
+<div id="boon-strip"></div>
+
+<!-- Ability bar -->
+<div id="abs">
+  <div class="ab"><div class="abk">LMB</div>Attack</div>
+  <div class="ab" id="ab-dash"><div class="abk">SPC</div>Dash</div>
+  <div class="ab" id="ab-spec"><div class="abk">E</div>Special</div>
+  <div class="ab" id="ab-cast"><div class="abk">Q</div>Cast</div>
+</div>
+
+<!-- Damage numbers layer -->
+<div id="dmgl"></div>
+
+<!-- Interact prompt -->
+<div id="iprompt" class="panel"></div>
+
+<!-- Hazard flash overlay -->
+<div id="hflash"></div>
+
+<!-- Room cleared banner -->
+<div id="rcleared">⚔ Chamber Cleared ⚔</div>
+
+<!-- AI debug strip -->
+<div id="aidbg"></div>
+
+<!-- Boon selection overlay -->
+<div id="boonui">
+  <div class="boon-title">A Boon Awaits</div>
+  <div class="boon-sub">Choose one gift from the Olympians</div>
+  <div class="boon-cards" id="boon-cards"></div>
+</div>
+
+<!-- Dialogue box -->
+<div id="dialoguebox">
+  <div class="panel">
+    <div class="dlg-top">
+      <div class="dlg-portrait" id="dlg-portrait">?</div>
+      <div class="dlg-name"     id="dlg-name">Unknown</div>
+    </div>
+    <div id="dlg-text">…</div>
+    <div class="dlg-choices" id="dlg-choices"></div>
+  </div>
+</div>
+
+<!-- Mirror of Night (upgrade shop) -->
+<div id="mirrorui">
+  <div class="mir-title">Mirror of Night</div>
+  <div class="mir-dark" id="mir-dark">Spend Darkness for permanent power</div>
+  <div class="mir-grid" id="mir-grid"></div>
+  <button class="mir-close" id="mir-close">Close Mirror</button>
+</div>
+
+<!-- Death screen -->
+<div id="death">
+  <div class="dtit">You Have Fallen</div>
+  <div class="dstats" id="dstats"></div>
+  <button class="mbtn" id="retryBtn">Try Again</button>
+</div>
+
+<!-- ═══════════════ SCRIPTS — load order matters ═══════════════ -->
+<script src="js/Engine.js"></script>
+<!-- Phase 1 -->
+<script src="js/RoomManager.js"></script>
+<script src="js/DoorSystem.js"></script>
+<script src="js/CameraController.js"></script>
+<script src="js/ChestSystem.js"></script>
+<!-- Phase 2 -->
+<script src="js/AnimationSystem.js"></script>
+<script src="js/CharacterRig.js"></script>
+<!-- Phase 3 -->
+<script src="js/EnemyAI.js"></script>
+<!-- Phase 4 -->
+<script src="js/EconomySystem.js"></script>
+<script src="js/DialogueSystem.js"></script>
+<script src="js/NPCSystem.js"></script>
+<script src="js/BoonSystem.js"></script>
+<!-- Phase 5 -->
+<script src="js/HazardSystem.js"></script>
+<!-- Entities & support (depend on all systems above) -->
+<script src="js/Player.js"></script>
+<script src="js/Enemy.js"></script>
+<script src="js/Projectile.js"></script>
+<script src="js/ParticleSystem.js"></script>
+<script src="js/CollisionSystem.js"></script>
+<script src="js/InputManager.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   GameController  — wires all phases together
+═══════════════════════════════════════════════════════════════ */
+class GameController {
+    constructor() {
+        this.engine      = null;
+        this.player      = null;
+        this.enemies     = [];
+        this.projectiles = [];
+
+        this.roomDepth    = 0;
+        this.totalKills   = 0;
+        this.roomsCleared = 0;
+
+        this.paused        = false;
+        this.started       = false;
+        this.boonPending   = false;
+        this.hazardCooldown= 0;
+    }
+
+    /* ── Bootstrap ─────────────────────────────────────────────── */
+    async init() {
+        this.load(10, 'Creating engine…');
+        this.engine = new Engine();
+        this.engine.init();
+
+        this.load(35, 'Loading systems…');
+        this.initSystems();
+
+        this.load(70, 'Generating world…');
+        await this.delay(350);
+
+        this.load(100, 'Ready!');
+        await this.delay(200);
+
+        document.getElementById('loading').classList.add('h');
+        document.getElementById('menu').classList.remove('hidden');
+    }
+
+    initSystems() {
+        // Order matters: Engine → Phase1 → Phase2 → Phase3 → Phase4 → Phase5 → support
+        new RoomManager(this.engine);
+        new DoorSystem(this.engine);
+        new CameraController(this.engine);
+        new ChestSystem(this.engine);
+
+        new AnimationSystem(this.engine);
+
+        new SwarmManager(this.engine);    // must exist before any Enemy spawns
+
+        new EconomySystem(this.engine);
+        new DialogueSystem(this.engine);
+        new NPCSystem(this.engine);
+        new BoonSystem(this.engine);
+
+        new HazardSystem(this.engine);
+
+        new ParticleSystem(this.engine);
+        new CollisionSystem(this.engine);
+        new InputManager(this.engine);
+
+        this.bindEvents();
+    }
+
+    /* ── Event bindings ─────────────────────────────────────────── */
+    bindEvents() {
+        document.getElementById('startBtn') .addEventListener('click', () => this.startGame());
+        document.getElementById('retryBtn') .addEventListener('click', () => this.restartGame());
+        document.getElementById('mir-close').addEventListener('click', () => this.closeMirror());
+
+        // Frame update
+        this.engine.on('engine:update', d => {
+            if (this.started && !this.paused) this.update(d.deltaTime);
+        });
+
+        // Player attacks
+        this.engine.on('input:mousedown', d => {
+            if (d.button !== 0 || !this.player?.active || !this.started || this.paused) return;
+            const a = this.player.attack();
+            if (a) this.spawnProj(a);
+        });
+
+        // Keyboard
+        this.engine.on('input:keydown', d => {
+            if (!this.started) return;
+            const dlg = this.engine.getSystem('dialogue');
+            if (dlg?.isActive()) {
+                const n = parseInt(d.key);
+                if (n >= 1 && n <= 4) dlg.choose(n - 1);
+                return;
+            }
+            if (this.boonPending) return;
+            if (!this.player?.active) return;
+
+            if (d.key === ' ')     { this.player.dash(); this.refreshChargesUI(); }
+            if (d.key === 'e')     { const s = this.player.useSpecial(); if (s) this.spawnSpecial(s); }
+            if (d.key === 'q')     { const c = this.player.useCast();    if (c) this.spawnProj(c); }
+            if (d.key === 'f' || d.key === 'enter') this.tryInteract();
+            if (d.key === 'tab')   this.openMirror();
+        });
+
+        // Enemy events
+        this.engine.on('enemy:death',      d => this.onEnemyDeath(d.enemy));
+        this.engine.on('enemy:attack',     d => {
+            if (this.player?.active && !this.player.isDashing)
+                this.player.takeDamage(d.damage);
+        });
+        this.engine.on('enemy:projectile', d => this.projectiles.push(new Projectile(this.engine, d)));
+
+        // Player events
+        this.engine.on('player:damage', d => this.refreshHPUI(d));
+        this.engine.on('player:heal',   d => this.refreshHPUI(d));
+        this.engine.on('player:death',  ()  => this.onDeath());
+
+        // Economy
+        this.engine.on('economy:updated',  ()  => this.refreshCurrencyUI());
+
+        // Upgrades applied to player
+        this.engine.on('upgrade:apply', d => this.applyUpgrade(d));
+
+        // Hazards
+        this.engine.on('hazard:hit', d => this.onHazardHit(d));
+
+        // Chests
+        this.engine.on('chest:opened', d => this.onChestReward(d.reward));
+
+        // Door
+        this.engine.on('door:transition', () => this.nextRoom());
+
+        // Dialogue UI
+        this.engine.on('dialogue:start',  d => this.showDialogue(d));
+        this.engine.on('dialogue:node',   d => this.showDialogue(d));
+        this.engine.on('dialogue:end',    ()  => this.hideDialogue());
+        this.engine.on('dialogue:action', d => this.handleDialogueAction(d.action));
+
+        // Boons
+        this.engine.on('boon:applied', () => this.hideBoonUI());
+    }
+
+    /* ── Game lifecycle ─────────────────────────────────────────── */
+    startGame() {
+        document.getElementById('menu').classList.add('hidden');
+        ['hud','rinfo','currency'].forEach(id => document.getElementById(id).style.display = '');
+        document.getElementById('abs').style.display = 'flex';
+        this.started = true;
+        this.loadRoom();
+    }
+
+    restartGame() {
+        document.getElementById('death').classList.remove('show');
+        this.cleanupRoom();
+        this.totalKills = this.roomsCleared = this.roomDepth = 0;
+        const eco = this.engine.getSystem('economy');
+        if (eco) { eco.currencies.darkness = 0; eco.currencies.gems = 0; }
+        const boon = this.engine.getSystem('boon');
+        if (boon) boon.clear();
+        this.refreshCurrencyUI();
+        this.loadRoom();
+    }
+
+    /* ── Room loading ───────────────────────────────────────────── */
+    loadRoom() {
+        this.boonPending = false;
+        this.cleanupRoom();
+
+        // RoomManager builds the room AND spawns its own door via createDoors()
+        const rm   = this.engine.getSystem('room');
+        const type = rm.getNextRoomType();
+        this.currentRoomType = type;
+        rm.createRoom(type);       // internally calls DoorSystem.createDoor()
+        this.roomDepth = rm.roomDepth;
+
+        // Place / reset player
+        if (!this.player) {
+            this.player = new Player(this.engine);
+            const col = this.engine.getSystem('collision');
+            if (col) col.register(this.player, 'player');
+        }
+        this.player.position.set(0, 0, 0);
+        this.player.health = this.player.maxHealth;
+        this.player.active = true;
+        if (this.player.rig) this.player.rig.setPosition(0, 0, 0);
+
+        // Camera
+        const cam = this.engine.getSystem('camera');
+        if (cam) cam.setTarget(this.player);
+
+        // Enemies — SwarmManager was cleared in cleanupRoom
+        const cfg = rm.roomConfigs[type];
+        if (type === 'battle') {
+            const n = Math.min(3 + Math.floor(this.roomDepth * 0.6), 10);
+            this.spawnEnemies(n, rm, type, false);
+        } else if (type === 'boss') {
+            this.spawnEnemies(1, rm, type, true);
+        }
+
+        // Hazards
+        const hz = this.engine.getSystem('hazards');
+        if (hz) hz.spawnHazardsForRoom(type, cfg.size);
+
+        // Chest (RoomManager also has its own chest logic — we add an extra one here only for boss)
+        if (type === 'boss') {
+            const cs = this.engine.getSystem('chests');
+            if (cs) {
+                const cp = rm.getChestSpawnPoint();
+                if (cp) cs.createChest(cp);
+            }
+        }
+
+        // UI
+        this.refreshHPUI({ health: this.player.health, maxHealth: this.player.maxHealth });
+        this.refreshRoomUI(cfg.name, type);
+        this.refreshEnemyBadge();
+        this.refreshChargesUI();
+        this.refreshCurrencyUI();
+    }
+
+    spawnEnemies(n, rm, type, boss) {
+        const pts  = rm.getEnemySpawnPoints(n);
+        const pool = this.roomDepth > 4
+            ? ['grunt','grunt','fast','ranged','tank']
+            : ['grunt','grunt','fast'];
+        pts.forEach(pos => {
+            const t = boss ? 'tank' : pool[Math.floor(Math.random() * pool.length)];
+            this.enemies.push(new Enemy(this.engine, t, pos));
+        });
+        this.refreshEnemyBadge();
+    }
+
+    cleanupRoom() {
+        this.enemies.forEach(e => { if (e.active) e.dispose(); });
+        this.enemies = [];
+        this.projectiles.forEach(p => { if (p.active) p.destroy(); });
+        this.projectiles = [];
+
+        const sw  = this.engine.getSystem('swarm');    if (sw)  sw.clear();
+        const hz  = this.engine.getSystem('hazards');  if (hz)  hz.clearAll();
+        const np  = this.engine.getSystem('npc');      if (np)  np.clearAll();
+        const col = this.engine.getSystem('collision'); if (col) col.clear();
+        // Note: RoomManager.clearRoom() is called internally by createRoom() on next load
+    }
+
+    nextRoom() {
+        this.cleanupRoom();
+        this.roomsCleared++;
+        this.loadRoom();
+    }
+
+    /* ── Per-frame update ───────────────────────────────────────── */
+    update(dt) {
+        const input = this.engine.getSystem('input');
+        const swarm = this.engine.getSystem('swarm');
+        const anim  = this.engine.getSystem('animation');
+        const cam   = this.engine.getSystem('camera');
+        const hz    = this.engine.getSystem('hazards');
+
+        // Player
+        if (this.player?.active) this.player.update(dt, input);
+
+        // Enemy AI (swarm drives all brains)
+        if (swarm && this.player) swarm.update(dt, this.player.position);
+
+        // Per-enemy light updates (health bars etc.)
+        this.enemies.forEach(e => { if (e.active) e.update(dt); });
+
+        // Animations
+        if (anim) anim.update(dt);
+
+        // Projectiles
+        for (let i = this.projectiles.length - 1; i >= 0; i--) {
+            const p = this.projectiles[i];
+            if (p.active) p.update(dt); else this.projectiles.splice(i, 1);
+        }
+
+        // Hazard damage
+        if (hz && this.player?.active) hz.update(dt, this.player.position);
+        if (this.hazardCooldown > 0) this.hazardCooldown--;
+
+        // Collision resolution
+        const col = this.engine.getSystem('collision');
+        if (col) {
+            // Player projectiles → enemies
+            col.checkLayerCollision('projectiles', 'enemies', (proj, enemy) => {
+                if (!proj.hit && proj.active && enemy.active) {
+                    enemy.takeDamage(proj.damage);
+                    proj.onHit();
+                    this.showDmg(enemy.position, proj.damage);
+                }
+            });
+            // Enemy projectiles → player
+            if (this.player?.active) {
+                col.checkLayerCollision('enemyProjectiles', 'player', (proj, player) => {
+                    if (!proj.hit && proj.active && !player.isDashing) {
+                        player.takeDamage(proj.damage);
+                        proj.onHit();
+                    }
+                });
+            }
+        }
+
+        // Camera follow
+        if (cam) cam.update(dt);
+
+        // Passive UI ticks
+        this.updateInteractPrompt();
+        this.updateAbilityUI();
+        this.updateAIDebug();
+    }
+
+    /* ── Combat helpers ─────────────────────────────────────────── */
+    spawnProj(d) {
+        this.projectiles.push(new Projectile(this.engine, d));
+    }
+
+    spawnSpecial(d) {
+        for (let i = 0; i < 8; i++) {
+            this.spawnProj({
+                position: d.position,
+                damage:   d.damage,
+                rotation: (i / 8) * Math.PI * 2,
+                speed: 0.4, lifetime: 90, radius: 0.3,
+                color: new BABYLON.Color3(1, 0.5, 0)
+            });
+        }
+        const parts = this.engine.getSystem('particle');
+        if (parts) parts.createFireBurst(d.position, 1.5);
+    }
+
+    /* ── Interaction ────────────────────────────────────────────── */
+    tryInteract() {
+        if (!this.player) return;
+        const pos = this.player.position;
+
+        // Priority: NPC > Chest > Door
+        const np = this.engine.getSystem('npc');
+        if (np) {
+            const npc = np.getNearby(pos, 3.5);
+            if (npc) { np.interact(npc); return; }
+        }
+        const cs = this.engine.getSystem('chests');
+        if (cs) {
+            const chest = cs.getNearbyChest(pos, 3);
+            if (chest) { cs.openChest(chest); return; }
+        }
+        const ds = this.engine.getSystem('doors');
+        if (ds) {
+            const door = ds.getNearbyDoor(pos, 3.5);
+            if (door) ds.triggerDoorTransition(door);
+        }
+    }
+
+    updateInteractPrompt() {
+        if (!this.player) return;
+        const pos = this.player.position;
+        const np  = this.engine.getSystem('npc');
+        const cs  = this.engine.getSystem('chests');
+        const ds  = this.engine.getSystem('doors');
+        const el  = document.getElementById('iprompt');
+
+        let msg = '';
+        const npc = np?.getNearby(pos, 3.5);
+        if (npc) {
+            msg = `Press <b>[F]</b> to speak with ${npc.name}`;
+        } else if (cs?.getNearbyChest(pos, 3)) {
+            msg = 'Press <b>[F]</b> to open chest';
+        } else {
+            const door = ds?.getNearbyDoor(pos, 3.5);
+            if (door) {
+                msg = door.locked
+                    ? '🔒 Defeat all enemies first'
+                    : 'Press <b>[F]</b> to proceed';
+            }
+        }
+        el.innerHTML      = msg;
+        el.style.display  = msg ? 'block' : 'none';
+    }
+
+    /* ── Enemy / room events ────────────────────────────────────── */
+    onEnemyDeath(enemy) {
+        const i = this.enemies.indexOf(enemy);
+        if (i > -1) this.enemies.splice(i, 1);
+        this.totalKills++;
+        this.refreshEnemyBadge();
+
+        // Ares blood-price boon: kills heal
+        const boons = this.engine.getSystem('boon')?.getActive() || [];
+        if (boons.find(b => b.id === 'ares_blood') && this.player) this.player.heal(5);
+
+        if (this.enemies.filter(e => e.active).length === 0) this.onRoomCleared();
+    }
+
+    onRoomCleared() {
+        const rm = this.engine.getSystem('room');
+        if (rm) rm.markRoomCleared();   // unlocks doors via DoorSystem
+
+        const banner = document.getElementById('rcleared');
+        banner.style.display = 'block';
+        setTimeout(() => { banner.style.display = 'none'; }, 2200);
+
+        // Offer a boon after a short delay
+        this.boonPending = true;
+        setTimeout(() => this.showBoonUI(), 1500);
+    }
+
+    onDeath() {
+        const el  = document.getElementById('death');
+        el.classList.add('show');
+        const eco = this.engine.getSystem('economy');
+        const cur = eco ? eco.getCurrencies() : { darkness:0, gems:0 };
+        document.getElementById('dstats').innerHTML =
+            `Rooms cleared: <b>${this.roomsCleared}</b> &nbsp; Enemies slain: <b>${this.totalKills}</b><br>` +
+            `Darkness: <b>${cur.darkness}</b> &nbsp; Gems: <b>${cur.gems}</b>`;
+    }
+
+    onHazardHit(d) {
+        if (this.hazardCooldown > 0 || !this.player?.active) return;
+        this.hazardCooldown = 60;  // 1 second grace period
+
+        if (d.type === 'pit') {
+            this.player.takeDamage(9999);
+        } else {
+            this.player.takeDamage(d.damage);
+            const fl = document.getElementById('hflash');
+            fl.style.display = 'block';
+            setTimeout(() => { fl.style.display = 'none'; }, 180);
+        }
+        const cam = this.engine.getSystem('camera');
+        if (cam) cam.shake(0.8, 0.25);
+    }
+
+    onChestReward(reward) {
+        if (!reward) return;
+        const eco = this.engine.getSystem('economy');
+        if (eco && reward.type !== 'boon') eco.collect(reward.type, reward.amount);
+        if (reward.type === 'boon') this.showBoonUI();
+        this.refreshCurrencyUI();
+    }
+
+    applyUpgrade(d) {
+        if (!this.player) return;
+        const map = {
+            healthUp: p => { p.maxHealth += 25; p.health = Math.min(p.health + 25, p.maxHealth); },
+            damageUp: p => { p.damage    += 10; },
+            dashUp:   p => { p.maxDashCharges = Math.min(p.maxDashCharges + 1, 4); p.dashCharges = p.maxDashCharges; },
+            speedUp:  p => { p.speed *= 1.15; p.runSpeed *= 1.15; },
+            gemFind:  ()=> {}
+        };
+        if (map[d.id]) map[d.id](this.player);
+        this.refreshHPUI({ health: this.player.health, maxHealth: this.player.maxHealth });
+        this.refreshChargesUI();
+    }
+
+    /* ── Boon UI ─────────────────────────────────────────────────── */
+    showBoonUI() {
+        const boonSys = this.engine.getSystem('boon');
+        if (!boonSys) { this.boonPending = false; return; }
+
+        const opts = boonSys.getOptions(3);
+        if (opts.length === 0) { this.boonPending = false; return; }
+
+        this.paused = true;
+        const el    = document.getElementById('boon-cards');
+        el.innerHTML = '';
+
+        opts.forEach(boon => {
+            const card = document.createElement('div');
+            card.className = 'bcard panel';
+            card.style.cssText = `border-color:${boon.color};box-shadow:0 0 16px ${boon.color}44`;
+            card.innerHTML = `
+                <div class="bc-god"   style="color:${boon.color}">${boon.god}</div>
+                <div class="bc-emoji">${boon.emoji}</div>
+                <div class="bc-name">${boon.name}</div>
+                <div class="bc-desc">${boon.desc}</div>`;
+            card.addEventListener('click', () => boonSys.apply(boon.id, this.player));
+            el.appendChild(card);
+        });
+
+        document.getElementById('boonui').classList.add('show');
+    }
+
+    hideBoonUI() {
+        document.getElementById('boonui').classList.remove('show');
+        this.paused      = false;
+        this.boonPending = false;
+        this.refreshBoonStrip();
+    }
+
+    refreshBoonStrip() {
+        const boons = this.engine.getSystem('boon')?.getActive() || [];
+        const strip = document.getElementById('boon-strip');
+        strip.innerHTML = '';
+        boons.slice(-6).forEach(b => {
+            const ic = document.createElement('div');
+            ic.className = 'boon-icon';
+            ic.title     = `${b.name}: ${b.desc}`;
+            ic.textContent = b.emoji;
+            strip.appendChild(ic);
+        });
+    }
+
+    /* ── Mirror of Night ─────────────────────────────────────────── */
+    openMirror() {
+        if (this.paused) return;
+        const eco = this.engine.getSystem('economy');
+        if (!eco) return;
+        this.paused = true;
+
+        const ups = eco.getUpgradeSummary();
+        const cur = eco.getCurrencies();
+        document.getElementById('mir-dark').textContent =
+            `Darkness: ${cur.darkness} 🌑   Gems: ${cur.gems} 💎`;
+
+        const grid = document.getElementById('mir-grid');
+        grid.innerHTML = '';
+        Object.entries(ups).forEach(([id, up]) => {
+            const maxed    = up.level >= up.max;
+            const nextCost = !maxed ? up.cost[up.level] : null;
+            const stars    = '★'.repeat(up.level) + '☆'.repeat(up.max - up.level);
+
+            const row = document.createElement('div');
+            row.className = 'mir-row panel' + (maxed ? ' maxed' : '');
+            row.innerHTML = `
+                <div class="mir-uname">${up.name} ${stars}</div>
+                <div class="mir-udesc">${up.desc}</div>
+                <div class="mir-ucost">${maxed ? 'MAXED' : `Cost: ${nextCost} 🌑  (have ${cur.darkness})`}</div>`;
+
+            if (!maxed) {
+                row.addEventListener('click', () => {
+                    const r = eco.buyUpgrade(id);
+                    if (r.ok) { this.openMirror(); }   // refresh
+                    else { row.style.boxShadow = '0 0 14px rgba(255,0,0,.7)'; setTimeout(() => row.style.boxShadow = '', 700); }
+                });
+            }
+            grid.appendChild(row);
+        });
+
+        document.getElementById('mirrorui').classList.add('show');
+    }
+
+    closeMirror() {
+        document.getElementById('mirrorui').classList.remove('show');
+        this.paused = false;
+    }
+
+    /* ── Dialogue UI ─────────────────────────────────────────────── */
+    showDialogue(d) {
+        this.paused = true;
+        document.getElementById('dlg-portrait').textContent = d.npc.portrait;
+        document.getElementById('dlg-name').textContent     = d.npc.name;
+        document.getElementById('dlg-text').textContent     = d.node.text;
+
+        const el = document.getElementById('dlg-choices');
+        el.innerHTML = '';
+        d.choices.forEach((c, i) => {
+            const btn = document.createElement('button');
+            btn.className   = 'dlg-choice';
+            btn.textContent = `${i + 1}.  ${c.label}`;
+            btn.addEventListener('click', () => this.engine.getSystem('dialogue').choose(i));
+            el.appendChild(btn);
+        });
+        document.getElementById('dialoguebox').classList.add('show');
+    }
+
+    hideDialogue() {
+        document.getElementById('dialoguebox').classList.remove('show');
+        this.paused = false;
+    }
+
+    handleDialogueAction(action) {
+        if (action === 'openMirror') { this.hideDialogue(); this.openMirror(); }
+    }
+
+    /* ── HUD helpers ─────────────────────────────────────────────── */
+    refreshHPUI(d) {
+        const pct = Math.max(0, d.health / d.maxHealth) * 100;
+        document.getElementById('hpf').style.width    = pct + '%';
+        document.getElementById('hptxt').textContent  = `${Math.max(0, Math.floor(d.health))} / ${d.maxHealth}`;
+    }
+
+    refreshChargesUI() {
+        if (!this.player) return;
+        const el = document.getElementById('charges');
+        el.innerHTML = '';
+        for (let i = 0; i < this.player.maxDashCharges; i++) {
+            const d = document.createElement('div');
+            d.className = 'ch' + (i < this.player.dashCharges ? ' on' : '');
+            el.appendChild(d);
+        }
+    }
+
+    refreshRoomUI(name, type) {
+        const labels = {
+            battle: '⚔ Battle Chamber',
+            boss:   '💀 Boss Arena',
+            rest:   '🌿 Sanctuary of Elysium',
+            hub:    '🏛 House of Hades',
+            final:  '☀ Gates of Olympus'
+        };
+        document.getElementById('rname').textContent = labels[type] || name;
+        document.getElementById('rsub').textContent  = `Room ${this.roomDepth}`;
+    }
+
+    refreshEnemyBadge() {
+        const n  = this.enemies.filter(e => e.active).length;
+        const el = document.getElementById('ebadge');
+        el.textContent   = `${n} enem${n === 1 ? 'y' : 'ies'} remaining`;
+        el.style.display = n > 0 ? 'block' : 'none';
+        const sub = document.getElementById('rsub');
+        if (sub) sub.textContent = `Room ${this.roomDepth}${n > 0 ? ` · ${n} enemies` : ''}`;
+    }
+
+    refreshCurrencyUI() {
+        const eco = this.engine.getSystem('economy');
+        const cur = eco ? eco.getCurrencies() : { darkness: 0, gems: 0 };
+        document.getElementById('cdark').textContent = cur.darkness;
+        document.getElementById('cgems').textContent = cur.gems;
+    }
+
+    updateAbilityUI() {
+        if (!this.player) return;
+        document.getElementById('ab-dash').classList.toggle('cd', this.player.dashCooldown    > 0);
+        document.getElementById('ab-spec').classList.toggle('cd', this.player.specialCooldown > 0);
+        document.getElementById('ab-cast').classList.toggle('cd', this.player.castCooldown    > 0);
+        this.refreshChargesUI();
+    }
+
+    updateAIDebug() {
+        const swarm = this.engine.getSystem('swarm');
+        if (!swarm) return;
+        const lines = [];
+        let i = 0;
+        for (const [e, brain] of swarm.brains) {
+            if (!e.active || i++ >= 6) break;
+            lines.push(`[${e.type}] ${brain.state}`);
+        }
+        document.getElementById('aidbg').textContent = lines.join('\n');
+    }
+
+    showDmg(pos3d, dmg) {
+        const layer = document.getElementById('dmgl');
+        if (!layer) return;
+        try {
+            const cam = this.engine.scene.activeCamera;
+            const eng = this.engine.engine;
+            const sp  = BABYLON.Vector3.Project(
+                pos3d.add(new BABYLON.Vector3(0, 2, 0)),
+                BABYLON.Matrix.Identity(),
+                this.engine.scene.getTransformMatrix(),
+                cam.viewport.toGlobal(eng.getRenderWidth(), eng.getRenderHeight())
+            );
+            const div = document.createElement('div');
+            div.className   = 'dn' + (dmg >= 20 ? ' crit' : '');
+            div.textContent = Math.floor(dmg);
+            div.style.left  = sp.x + 'px';
+            div.style.top   = sp.y + 'px';
+            layer.appendChild(div);
+            setTimeout(() => div.remove(), 880);
+        } catch(e) { /* projection errors are non-fatal */ }
+    }
+
+    /* ── Utilities ───────────────────────────────────────────────── */
+    load(pct, txt) {
+        document.getElementById('lfill').style.width = pct + '%';
+        document.getElementById('ltxt').textContent  = txt;
+    }
+    delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+    const game = new GameController();
+    await game.init();
+    window.game = game;   // expose for debugging
+});
+</script>
+</body>
+</html>
