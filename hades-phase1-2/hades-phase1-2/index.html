@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Underworld Ascension - Phase 1 & 2</title>
+    
+    <!-- Babylon.js -->
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs@7.0.0/babylon.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs-loaders@7.0.0/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs-materials@7.0.0/babylonjs.materials.min.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Text:wght@400;600;700&display=swap');
+        
+        :root {
+            --color-blood: #8B0000;
+            --color-gold: #FFD700;
+            --color-bronze: #CD7F32;
+            --color-dark: #0a0505;
+            --color-text: #F5E6D3;
+        }
+        
+        body {
+            font-family: 'Crimson Text', serif;
+            background: var(--color-dark);
+            color: var(--color-text);
+            overflow: hidden;
+        }
+        
+        h1, h2 {
+            font-family: 'Cinzel', serif;
+        }
+        
+        #gameCanvas {
+            width: 100%;
+            height: 100vh;
+            display: block;
+            touch-action: none;
+        }
+        
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        /* HUD */
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+        }
+        
+        .stat-bar {
+            margin-bottom: 10px;
+        }
+        
+        .stat-label {
+            font-family: 'Cinzel', serif;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--color-gold);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 5px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        
+        .bar-container {
+            width: 300px;
+            height: 25px;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid var(--color-gold);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .bar-fill {
+            height: 100%;
+            transition: width 0.3s;
+            background: linear-gradient(90deg, #ff4444, #cc0000);
+        }
+        
+        .bar-text {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-family: 'Cinzel', serif;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.9);
+            z-index: 2;
+        }
+        
+        #room-info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+            font-family: 'Cinzel', serif;
+            font-size: 18px;
+            color: var(--color-gold);
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+        }
+        
+        .room-name {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+        
+        /* Abilities */
+        #abilities {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            pointer-events: none;
+        }
+        
+        .ability {
+            width: 70px;
+            height: 70px;
+            background: rgba(10,5,5,0.9);
+            border: 3px solid var(--color-gold);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 0 20px rgba(255,215,0,0.3);
+        }
+        
+        .ability-key {
+            font-family: 'Cinzel', serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--color-gold);
+            margin-bottom: 4px;
+        }
+        
+        .ability.cooldown {
+            opacity: 0.4;
+            border-color: var(--color-bronze);
+        }
+        
+        /* Main Menu */
+        #main-menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(10,5,5,0.98), rgba(26,10,10,0.95));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            z-index: 2000;
+        }
+        
+        #main-menu.hidden {
+            display: none;
+        }
+        
+        .game-title {
+            font-family: 'Cinzel', serif;
+            font-size: 64px;
+            font-weight: 900;
+            color: var(--color-gold);
+            text-transform: uppercase;
+            letter-spacing: 8px;
+            margin-bottom: 20px;
+            text-shadow: 
+                3px 3px 0 var(--color-blood),
+                6px 6px 0 rgba(139,0,0,0.5),
+                0 0 40px rgba(255,215,0,0.5);
+        }
+        
+        .subtitle {
+            font-size: 24px;
+            color: var(--color-bronze);
+            font-style: italic;
+            margin-bottom: 40px;
+            letter-spacing: 2px;
+        }
+        
+        .menu-btn {
+            font-family: 'Cinzel', serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--color-text);
+            background: linear-gradient(135deg, var(--color-blood), #ff4444);
+            border: 3px solid var(--color-gold);
+            padding: 18px 50px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            margin: 10px;
+        }
+        
+        .menu-btn:hover {
+            background: linear-gradient(135deg, #ff4444, #ff6666);
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 6px 25px rgba(255,215,0,0.6);
+        }
+        
+        .controls {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 16px;
+            line-height: 1.8;
+            max-width: 600px;
+        }
+        
+        .control-line {
+            margin: 8px 0;
+            color: var(--color-bronze);
+        }
+        
+        .control-key {
+            display: inline-block;
+            background: rgba(0,0,0,0.5);
+            border: 2px solid var(--color-gold);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-family: 'Cinzel', serif;
+            font-weight: 700;
+            color: var(--color-gold);
+            margin: 0 5px;
+        }
+        
+        /* Phase Info */
+        .phase-info {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 14px;
+            color: var(--color-bronze);
+            background: rgba(0,0,0,0.7);
+            padding: 15px 30px;
+            border-radius: 8px;
+            border: 2px solid var(--color-bronze);
+        }
+        
+        .phase-title {
+            font-family: 'Cinzel', serif;
+            font-weight: 700;
+            color: var(--color-gold);
+            margin-bottom: 5px;
+        }
+        
+        /* Loading Screen */
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--color-dark);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+        }
+        
+        #loading.hidden {
+            display: none;
+        }
+        
+        .loading-text {
+            font-family: 'Cinzel', serif;
+            font-size: 24px;
+            color: var(--color-gold);
+            margin-bottom: 20px;
+        }
+        
+        .loading-bar {
+            width: 400px;
+            height: 20px;
+            background: rgba(0,0,0,0.5);
+            border: 2px solid var(--color-gold);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .loading-progress {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--color-gold), var(--color-bronze));
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-overlay">
+        <!-- Loading Screen -->
+        <div id="loading">
+            <div class="loading-text">Loading Underworld...</div>
+            <div class="loading-bar">
+                <div class="loading-progress" id="loadingProgress"></div>
+            </div>
+        </div>
+        
+        <!-- Main Menu -->
+        <div id="main-menu" class="hidden">
+            <h1 class="game-title">UNDERWORLD ASCENSION</h1>
+            <div class="subtitle">Phase 1 & 2 - Rooms + Animations</div>
+            
+            <button class="menu-btn" id="startBtn">BEGIN YOUR ESCAPE</button>
+            
+            <div class="controls">
+                <div class="control-line">
+                    <span class="control-key">WASD</span> Move
+                    <span class="control-key">Shift</span> Run
+                </div>
+                <div class="control-line">
+                    <span class="control-key">LMB</span> Attack
+                    <span class="control-key">Space</span> Dash
+                </div>
+                <div class="control-line">
+                    <span class="control-key">E</span> Special
+                    <span class="control-key">Q</span> Cast
+                </div>
+            </div>
+            
+            <div class="phase-info">
+                <div class="phase-title">✅ Phase 1: Room System + Textures + Doors</div>
+                <div>5 unique room types • Procedural textures • Dynamic lighting</div>
+                <div class="phase-title" style="margin-top: 10px;">✅ Phase 2: Character Animations</div>
+                <div>Rigged characters • Walk/Run cycles • Attack animations</div>
+            </div>
+        </div>
+        
+        <!-- HUD -->
+        <div id="hud">
+            <div class="stat-bar">
+                <div class="stat-label">HEALTH</div>
+                <div class="bar-container">
+                    <div class="bar-fill" id="healthBar" style="width: 100%"></div>
+                    <span class="bar-text" id="healthText">100 / 100</span>
+                </div>
+            </div>
+        </div>
+        
+        <div id="room-info">
+            <div class="room-name" id="roomName">CHAMBER OF TARTARUS</div>
+            <div>
+                <span id="roomDepth">Room: 1</span> • 
+                <span id="enemyCount">Enemies: 0</span>
+            </div>
+        </div>
+        
+        <div id="abilities">
+            <div class="ability">
+                <div class="ability-key">LMB</div>
+                <div>Attack</div>
+            </div>
+            <div class="ability" id="dashAbility">
+                <div class="ability-key">SPACE</div>
+                <div>Dash</div>
+            </div>
+            <div class="ability" id="specialAbility">
+                <div class="ability-key">E</div>
+                <div>Special</div>
+            </div>
+            <div class="ability" id="castAbility">
+                <div class="ability-key">Q</div>
+                <div>Cast</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core Engine -->
+    <script src="js/Engine.js"></script>
+    
+    <!-- Phase 1 Systems -->
+    <script src="js/RoomManager.js"></script>
+    <script src="js/DoorSystem.js"></script>
+    <script src="js/CameraController.js"></script>
+    <script src="js/ChestSystem.js"></script>
+    
+    <!-- Phase 2 Systems -->
+    <script src="js/AnimationSystem.js"></script>
+    <script src="js/CharacterRig.js"></script>
+    <script src="js/Player.js"></script>
+    <script src="js/Enemy.js"></script>
+    
+    <!-- Supporting Systems -->
+    <script src="js/ParticleSystem.js"></script>
+    <script src="js/CollisionSystem.js"></script>
+    <script src="js/InputManager.js"></script>
+    <script src="js/Projectile.js"></script>
+    
+    <!-- Main Game Controller -->
+    <script>
+        class GameController {
+            constructor() {
+                this.engine = null;
+                this.player = null;
+                this.enemies = [];
+                this.projectiles = [];
+                this.currentRoom = null;
+                this.roomDepth = 0;
+                
+                this.paused = false;
+                this.gameStarted = false;
+            }
+            
+            async init() {
+                console.log('[Game] Initializing...');
+                
+                // Update loading
+                this.updateLoading(20, 'Creating engine...');
+                
+                // Create engine
+                this.engine = new Engine();
+                this.engine.init();
+                
+                this.updateLoading(40, 'Loading systems...');
+                
+                // Initialize systems
+                await this.initSystems();
+                
+                this.updateLoading(60, 'Generating textures...');
+                
+                // Small delay for systems to fully initialize
+                await this.delay(500);
+                
+                this.updateLoading(80, 'Preparing world...');
+                
+                // Setup event listeners
+                this.setupEventListeners();
+                
+                this.updateLoading(100, 'Ready!');
+                
+                await this.delay(300);
+                
+                // Hide loading, show menu
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('main-menu').classList.remove('hidden');
+                
+                console.log('[Game] Ready to play!');
+            }
+            
+            async initSystems() {
+                // Phase 1 systems
+                new RoomManager(this.engine);
+                new DoorSystem(this.engine);
+                new CameraController(this.engine);
+                new ChestSystem(this.engine);
+                
+                // Phase 2 systems
+                new AnimationSystem(this.engine);
+                
+                // Supporting systems
+                new ParticleSystem(this.engine);
+                new CollisionSystem(this.engine);
+                new InputManager(this.engine);
+                
+                console.log('[Game] All systems initialized');
+            }
+            
+            setupEventListeners() {
+                // Start button
+                document.getElementById('startBtn').addEventListener('click', () => {
+                    this.startGame();
+                });
+                
+                // Engine update
+                this.engine.on('engine:update', (data) => {
+                    if (!this.paused && this.gameStarted) {
+                        this.update(data.deltaTime);
+                    }
+                });
+                
+                // Input events
+                this.engine.on('input:mousedown', (data) => {
+                    if (data.button === 0 && this.player && this.gameStarted) {
+                        const attackData = this.player.attack();
+                        if (attackData) {
+                            this.createProjectile(attackData);
+                        }
+                    }
+                });
+                
+                this.engine.on('input:keydown', (data) => {
+                    if (!this.player || !this.gameStarted) return;
+                    
+                    if (data.key === ' ') {
+                        this.player.dash();
+                    } else if (data.key === 'e') {
+                        const special = this.player.useSpecial();
+                        if (special) {
+                            this.createSpecialAttack(special);
+                        }
+                    } else if (data.key === 'q') {
+                        const cast = this.player.useCast();
+                        if (cast) {
+                            this.createProjectile(cast);
+                        }
+                    }
+                });
+                
+                // Enemy events
+                this.engine.on('enemy:death', (data) => {
+                    const index = this.enemies.indexOf(data.enemy);
+                    if (index > -1) {
+                        this.enemies.splice(index, 1);
+                    }
+                    this.updateEnemyCount();
+                    this.checkRoomCleared();
+                });
+                
+                this.engine.on('enemy:attack', (data) => {
+                    if (this.player) {
+                        this.player.takeDamage(data.damage);
+                    }
+                });
+                
+                // Room events
+                this.engine.on('room:cleared', () => {
+                    console.log('[Game] Room cleared!');
+                });
+            }
+            
+            startGame() {
+                document.getElementById('main-menu').classList.add('hidden');
+                this.gameStarted = true;
+                
+                // Create first room (Hub)
+                const roomManager = this.engine.getSystem('room');
+                const roomType = roomManager.getNextRoomType();
+                this.currentRoom = roomManager.createRoom(roomType);
+                this.roomDepth = roomManager.roomDepth;
+                
+                // Update UI
+                this.updateRoomUI();
+                
+                // Create player
+                this.player = new Player(this.engine);
+                this.player.position.set(0, 0, 0);
+                
+                // Setup camera to follow player
+                const camera = this.engine.getSystem('camera');
+                if (camera) {
+                    camera.setTarget(this.player);
+                }
+                
+                // Spawn enemies if battle room
+                if (roomType === 'battle') {
+                    this.spawnEnemies(3);
+                }
+                
+                console.log('[Game] Game started!');
+            }
+            
+            update(deltaTime) {
+                const input = this.engine.getSystem('input');
+                
+                // Update player
+                if (this.player && this.player.active) {
+                    this.player.update(deltaTime, input);
+                }
+                
+                // Update enemies
+                if (this.player) {
+                    this.enemies.forEach(enemy => {
+                        if (enemy.active) {
+                            enemy.update(deltaTime, this.player.position);
+                        }
+                    });
+                }
+                
+                // Update projectiles
+                this.projectiles.forEach((proj, index) => {
+                    if (proj.active) {
+                        proj.update(deltaTime);
+                    } else {
+                        this.projectiles.splice(index, 1);
+                    }
+                });
+                
+                // Update camera
+                const camera = this.engine.getSystem('camera');
+                if (camera) {
+                    camera.update(deltaTime);
+                }
+                
+                // Check collisions
+                this.checkCollisions();
+            }
+            
+            checkCollisions() {
+                const collision = this.engine.getSystem('collision');
+                
+                // Projectiles vs Enemies
+                collision.checkLayerCollision('projectiles', 'enemies', (proj, enemy) => {
+                    if (!proj.hit && proj.active && enemy.active) {
+                        enemy.takeDamage(proj.damage);
+                        proj.onHit();
+                    }
+                });
+            }
+            
+            createProjectile(data) {
+                const proj = new Projectile(this.engine, data);
+                this.projectiles.push(proj);
+            }
+            
+            createSpecialAttack(data) {
+                // AOE attack
+                const angles = 8;
+                for (let i = 0; i < angles; i++) {
+                    const angle = (i / angles) * Math.PI * 2;
+                    const projData = {
+                        position: data.position,
+                        damage: data.damage,
+                        rotation: angle,
+                        speed: 0.4,
+                        lifetime: 90,
+                        radius: 0.35,
+                        color: new BABYLON.Color3(1, 0.5, 0)
+                    };
+                    this.createProjectile(projData);
+                }
+                
+                const particles = this.engine.getSystem('particle');
+                if (particles) {
+                    particles.createFireBurst(data.position, 1.5);
+                }
+            }
+            
+            spawnEnemies(count) {
+                const roomManager = this.engine.getSystem('room');
+                const spawnPoints = roomManager.getEnemySpawnPoints(count);
+                
+                const types = ['grunt', 'grunt', 'fast', 'tank'];
+                
+                spawnPoints.forEach(pos => {
+                    const type = types[Math.floor(Math.random() * types.length)];
+                    const enemy = new Enemy(this.engine, type, pos);
+                    this.enemies.push(enemy);
+                });
+                
+                this.updateEnemyCount();
+            }
+            
+            checkRoomCleared() {
+                if (this.enemies.length === 0 && this.currentRoom) {
+                    const roomManager = this.engine.getSystem('room');
+                    roomManager.markRoomCleared();
+                    
+                    // Show door unlocked message
+                    setTimeout(() => {
+                        console.log('[Game] Doors unlocked! Proceed to next room.');
+                    }, 1000);
+                }
+            }
+            
+            updateRoomUI() {
+                const roomManager = this.engine.getSystem('room');
+                if (roomManager.currentRoom) {
+                    document.getElementById('roomName').textContent = 
+                        roomManager.currentRoom.config.name;
+                    document.getElementById('roomDepth').textContent = 
+                        `Room: ${roomManager.roomDepth}`;
+                }
+            }
+            
+            updateEnemyCount() {
+                document.getElementById('enemyCount').textContent = 
+                    `Enemies: ${this.enemies.length}`;
+            }
+            
+            updateLoading(percent, text) {
+                document.getElementById('loadingProgress').style.width = percent + '%';
+                document.querySelector('.loading-text').textContent = text;
+            }
+            
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+        }
+        
+        // Start game when page loads
+        window.addEventListener('DOMContentLoaded', async () => {
+            const game = new GameController();
+            await game.init();
+            window.game = game;
+        });
+    </script>
+</body>
+</html>
