@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Underworld Ascension</title>
+    <link rel="stylesheet" href="css/main.css">
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs@7.0.0/babylon.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs-loaders@7.0.0/babylonjs.loaders.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs-materials@7.0.0/babylonjs.materials.min.js"></script>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <!-- UI Overlay -->
+    <div id="ui-overlay">
+        <!-- HUD -->
+        <div id="hud" class="ui-panel">
+            <!-- Top Left - Player Stats -->
+            <div id="player-stats">
+                <div class="stat-group">
+                    <div class="stat-label">ZAGREUS</div>
+                    <div class="health-bar-container">
+                        <div class="health-bar" id="healthBar">
+                            <div class="bar-inner"></div>
+                            <span class="bar-text" id="healthText">100 / 100</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="stat-group dash-group">
+                    <div class="stat-label">DASH</div>
+                    <div class="dash-charges" id="dashCharges">
+                        <div class="dash-charge ready"></div>
+                        <div class="dash-charge ready"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Top Right - Room Info -->
+            <div id="room-info">
+                <div class="room-name" id="roomName">CHAMBER OF TARTARUS</div>
+                <div class="room-details">
+                    <span id="roomDepth">Depth: 1</span>
+                    <span class="separator">•</span>
+                    <span id="enemyCount">Foes: 0</span>
+                </div>
+                <div class="boon-count" id="boonCount">Boons: 0</div>
+            </div>
+            
+            <!-- Bottom Center - Abilities -->
+            <div id="abilities-bar">
+                <div class="ability-slot" data-key="LMB">
+                    <div class="ability-icon attack-icon"></div>
+                    <div class="ability-key">LMB</div>
+                    <div class="ability-name">Strike</div>
+                </div>
+                
+                <div class="ability-slot" data-key="SPACE" id="dashAbility">
+                    <div class="ability-icon dash-icon"></div>
+                    <div class="ability-key">SPACE</div>
+                    <div class="ability-name">Dash</div>
+                    <div class="ability-cooldown" id="dashCooldownText"></div>
+                </div>
+                
+                <div class="ability-slot" data-key="E" id="specialAbility">
+                    <div class="ability-icon special-icon"></div>
+                    <div class="ability-key">E</div>
+                    <div class="ability-name">Special</div>
+                    <div class="ability-cooldown" id="specialCooldownText"></div>
+                </div>
+                
+                <div class="ability-slot" data-key="Q" id="castAbility">
+                    <div class="ability-icon cast-icon"></div>
+                    <div class="ability-key">Q</div>
+                    <div class="ability-name">Cast</div>
+                    <div class="ability-cooldown" id="castCooldownText"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Menu -->
+        <div id="main-menu" class="menu-screen">
+            <div class="menu-content">
+                <h1 class="game-title">UNDERWORLD ASCENSION</h1>
+                <div class="title-subtitle">Escape the Depths of Hades</div>
+                
+                <div class="menu-buttons">
+                    <button class="menu-btn primary" id="startBtn">BEGIN YOUR ESCAPE</button>
+                    <button class="menu-btn" id="continueBtn" style="display: none;">CONTINUE RUN</button>
+                    <button class="menu-btn" id="hubBtn" style="display: none;">RETURN TO HUB</button>
+                </div>
+                
+                <div class="game-stats" id="gameStats">
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalRuns">0</span>
+                        <span class="stat-label">Escape Attempts</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalClears">0</span>
+                        <span class="stat-label">Chambers Cleared</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="totalKills">0</span>
+                        <span class="stat-label">Foes Vanquished</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="lore-text">
+                <p>"Prince Zagreus, son of Hades, seeks to escape the underworld and reach Mount Olympus. 
+                The gods offer their aid, but the path is treacherous..."</p>
+            </div>
+        </div>
+        
+        <!-- Boon Selection Menu -->
+        <div id="boon-menu" class="menu-screen hidden">
+            <div class="menu-content">
+                <h2 class="menu-title">DIVINE BLESSINGS</h2>
+                <div class="menu-subtitle" id="boonSubtitle">Choose wisely, Prince of the Underworld</div>
+                
+                <div id="boon-options" class="boon-grid"></div>
+            </div>
+        </div>
+        
+        <!-- NPC Dialogue -->
+        <div id="dialogue-box" class="hidden">
+            <div class="dialogue-portrait" id="npcPortrait"></div>
+            <div class="dialogue-content">
+                <div class="dialogue-name" id="npcName"></div>
+                <div class="dialogue-text" id="dialogueText"></div>
+                <div class="dialogue-continue">Press SPACE to continue</div>
+            </div>
+        </div>
+        
+        <!-- Death Screen -->
+        <div id="death-menu" class="menu-screen hidden">
+            <div class="menu-content">
+                <h2 class="menu-title death-title">YOU PERISHED</h2>
+                <div class="death-quote" id="deathQuote"></div>
+                <div class="death-stats" id="deathStats"></div>
+                <button class="menu-btn primary" id="returnBtn">RETURN TO HOUSE</button>
+            </div>
+        </div>
+        
+        <!-- Hub Screen -->
+        <div id="hub-menu" class="menu-screen hidden">
+            <div class="menu-content">
+                <h2 class="menu-title">HOUSE OF HADES</h2>
+                <div class="hub-description">
+                    <p>You stand in the great hall of your father's domain. The air is thick with the scent of sulfur and ancient stone.</p>
+                </div>
+                
+                <div class="hub-options">
+                    <div class="hub-option" id="hubMirror">
+                        <div class="hub-icon">🪞</div>
+                        <div class="hub-title">Mirror of Night</div>
+                        <div class="hub-desc">Permanent upgrades</div>
+                    </div>
+                    
+                    <div class="hub-option" id="hubNPC1">
+                        <div class="hub-icon">👤</div>
+                        <div class="hub-title">Achilles</div>
+                        <div class="hub-desc">Speak with the hero</div>
+                    </div>
+                    
+                    <div class="hub-option" id="hubNPC2">
+                        <div class="hub-icon">👤</div>
+                        <div class="hub-title">Nyx</div>
+                        <div class="hub-desc">Speak with Night incarnate</div>
+                    </div>
+                    
+                    <div class="hub-option" id="hubExit">
+                        <div class="hub-icon">🚪</div>
+                        <div class="hub-title">Depart</div>
+                        <div class="hub-desc">Begin your escape</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Boss Introduction -->
+        <div id="boss-intro" class="hidden">
+            <div class="boss-intro-content">
+                <div class="boss-title" id="bossTitle"></div>
+                <div class="boss-subtitle" id="bossSubtitle"></div>
+            </div>
+        </div>
+        
+        <!-- Damage Numbers -->
+        <div id="damage-numbers"></div>
+    </div>
+
+    <!-- Core Game Systems -->
+    <script src="js/Engine.js"></script>
+    <script src="js/AssetManager.js"></script>
+    <script src="js/ParticleSystem.js"></script>
+    <script src="js/AudioSystem.js"></script>
+    <script src="js/CollisionSystem.js"></script>
+    <script src="js/InputManager.js"></script>
+    
+    <!-- Game Objects -->
+    <script src="js/Player.js"></script>
+    <script src="js/Enemy.js"></script>
+    <script src="js/Boss.js"></script>
+    <script src="js/Projectile.js"></script>
+    
+    <!-- Game Systems -->
+    <script src="js/RoomManager.js"></script>
+    <script src="js/BoonSystem.js"></script>
+    <script src="js/DialogueSystem.js"></script>
+    <script src="js/UIManager.js"></script>
+    <script src="js/ProgressionSystem.js"></script>
+    <script src="js/LoreSystem.js"></script>
+    
+    <!-- Main Game -->
+    <script src="js/Game.js"></script>
+    
+    <script>
+        // Initialize game when DOM is ready
+        window.addEventListener('DOMContentLoaded', () => {
+            window.game = new Game();
+            window.game.init();
+        });
+    </script>
+</body>
+</html>
