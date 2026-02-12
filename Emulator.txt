@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>SNES Emulator</title>
+  <script src="https://cdn.jsdelivr.net/npm/emulatorjs@latest/dist/emulator.min.js"></script>
+  <style>
+    body {
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    #game {
+      margin: 20px auto;
+      width: 800px;
+      height: 600px;
+    }
+    select, button, input {
+      margin: 10px;
+      padding: 8px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Super Nintendo Emulator</h1>
+
+  <input type="file" id="romLoader" accept=".sfc,.smc">
+
+  <div id="game"></div>
+
+  <script>
+    const romInput = document.getElementById("romLoader");
+
+    romInput.addEventListener("change", function () {
+      const file = this.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        startEmulator(e.target.result);
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    function startEmulator(romData) {
+      document.getElementById("game").innerHTML = "";
+
+      EJS_player = "#game";
+      EJS_core = "snes";
+      EJS_gameUrl = romData;
+      EJS_pathtodata = "https://cdn.jsdelivr.net/npm/emulatorjs@latest/data/";
+      
+      // Save system
+      EJS_startOnLoaded = true;
+      EJS_Settings = {
+        saveState: true,
+        autoSave: true
+      };
+
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/emulatorjs@latest/dist/loader.js";
+      document.body.appendChild(script);
+    }
+  </script>
+
+</body>
+</html>
