@@ -1,0 +1,40 @@
+class GameMenu {
+    constructor(scene) {
+        this.scene = scene;
+        this.isVisible = false;
+        this.container = scene.add.container(400, 300).setScrollFactor(0).setAlpha(0);
+        
+        // Background blur-style rectangle
+        const bg = scene.add.rectangle(0, 0, 800, 600, 0x000000, 0.8);
+        this.container.add(bg);
+
+        // Menu Tabs: [MAP] [CHARMS] [SYSTEM]
+        this.tabs = ["MAP", "CHARMS", "SYSTEM"];
+        this.currentTab = 0;
+        
+        this.titleText = scene.add.text(0, -250, 'MAP', { fontSize: '32px', color: '#fff' }).setOrigin(0.5);
+        this.container.add(this.titleText);
+    }
+
+    toggle() {
+        this.isVisible = !this.isVisible;
+        this.scene.tweens.add({
+            targets: this.container,
+            alpha: this.isVisible ? 1 : 0,
+            duration: 200
+        });
+
+        if (this.isVisible) {
+            this.scene.physics.world.pause();
+        } else {
+            this.scene.physics.world.resume();
+        }
+    }
+
+    navigate(direction) {
+        if (!this.isVisible) return;
+        this.currentTab = (this.currentTab + direction + this.tabs.length) % this.tabs.length;
+        this.titleText.setText(this.tabs[this.currentTab]);
+        // Here you would trigger logic to show the Map or the Save/Export JSON button
+    }
+}

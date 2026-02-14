@@ -1,0 +1,11 @@
+// Add this to your main Scene create() function
+this.lights.enable().setAmbientColor(0x111111);
+
+const playerLight = this.lights.addLight(0, 0, 200).setIntensity(2);
+
+// In update()
+playerLight.x = this.player.x;
+playerLight.y = this.player.y;
+
+// Give sprites lighting support
+this.player.setPipeline('Light2D');

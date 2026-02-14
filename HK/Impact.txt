@@ -1,0 +1,41 @@
+const CombatSystem = {
+    handleHit: (scene, player, enemy) => {
+        // 1. Logic: Reduce Enemy HP
+        enemy.hp -= 1;
+        enemy.state = 'PARRY'; // Trigger the Smart AI reaction
+
+        // 2. Juice: The Hit-Stall
+        scene.physics.world.pause();
+        
+        // 3. VFX: Particles and Flash
+        FXManager.spawnSoulParticles(scene, enemy.x, enemy.y);
+        enemy.setTint(0xffffff); // Flash white
+
+        // 4. Resume after 50ms
+        setTimeout(() => {
+            scene.physics.world.resume();
+            enemy.clearTint();
+            
+            if (enemy.hp <= 0) {
+                CombatSystem.handleDeath(scene, enemy);
+            }
+        }, 50);
+
+        // 5. Knockback
+        const knockDir = player.x < enemy.x ? 1 : -1;
+        enemy.setVelocityX(knockDir * 300);
+        player.setVelocityX(-knockDir * 150); // Recoil for the player
+    },
+
+    handleDeath: (scene, entity) => {
+        // Death animation logic
+        entity.setTint(0x000000);
+        entity.body.enable = false;
+        scene.tweens.add({
+            targets: entity,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => entity.destroy()
+        });
+    }
+};

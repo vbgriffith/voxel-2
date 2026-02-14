@@ -1,0 +1,22 @@
+const NPC_DATA = {
+    "Elderbug_Clone": {
+        lines: [
+            "Welcome to the descent, traveler.",
+            "Beware the Crystal Peaks; the light there is not kind.",
+            "You have found {geo} Geo. Keep it well."
+        ],
+        questTrigger: (player) => player.stats.geo > 50
+    }
+};
+
+class DialogueSystem {
+    static showMessage(npcId, playerStats) {
+        const npc = NPC_DATA[npcId];
+        let text = npc.lines[Math.floor(Math.random() * npc.lines.length)];
+        // Replace placeholders with real stats
+        text = text.replace('{geo}', playerStats.geo);
+        
+        // UI logic to render the black text box at the bottom
+        console.log(`[NPC DIALOGUE]: ${text}`);
+    }
+}

@@ -1,0 +1,92 @@
+const RegionMatrix = {
+    "Forgotten_Crossroads": {
+        id: 0,
+        color: 0x445577,
+        bgMusic: 'ambient_wind',
+        hazards: ['spikes'],
+        boss: "False Knight Clone",
+        unlockAbility: "Mothwing Dash", // First major blocker
+        enemies: ["Husk", "Leaper", "Flyer"]
+    },
+    "Greenpath": {
+        id: 1,
+        color: 0x226633,
+        bgMusic: 'forest_hum',
+        hazards: ['acid_pools'],
+        boss: "Hornet Prototype",
+        unlockAbility: "Cloak",
+        enemies: ["MossKnight", "VineCaster"]
+    },
+    "Fungal_Wastes": {
+        id: 2,
+        color: 0x886622,
+        bgMusic: 'bouncy_synth',
+        hazards: ['spore_clouds'],
+        boss: "Mantis Lords",
+        unlockAbility: "Mantis Claw", // Wall Jump
+        enemies: ["FungalShroom", "MantisWarrior"]
+    },
+    "City_of_Tears": {
+        id: 3,
+        color: 0x334499,
+        bgMusic: 'rain_piano',
+        hazards: ['elevators', 'water'],
+        boss: "Soul Master Clone",
+        unlockAbility: "Desolate Dive",
+        enemies: ["HuskSentry", "GreatKnight"]
+    },
+    "Crystal_Peak": {
+        id: 4,
+        color: 0xcc88ff,
+        bgMusic: 'crystal_tink',
+        hazards: ['lasers', 'conveyor_belts'],
+        boss: "Crystal Guardian",
+        unlockAbility: "Crystal Heart", // Super Dash
+        enemies: ["LaserFly", "CrystalCrawler"]
+    },
+    "Deepnest": {
+        id: 5,
+        color: 0x111111,
+        bgMusic: 'skitter_sounds',
+        hazards: ['fake_walls', 'pitfalls'],
+        boss: "Nosk Clone",
+        unlockAbility: "Tram Pass",
+        enemies: ["DirtCarver", "Spider"]
+    },
+    "Ancient_Basin": {
+        id: 6,
+        color: 0x222222,
+        bgMusic: 'deep_void',
+        hazards: ['void_spikes'],
+        boss: "Broken Vessel",
+        unlockAbility: "Monarch Wings", // Double Jump
+        enemies: ["InfectedFly", "Blob"]
+    },
+    "Kingdom_Edge": {
+        id: 7,
+        color: 0xeeeeee, // Ash falling
+        bgMusic: 'wind_howl',
+        hazards: ['great_falls'],
+        boss: "Hive Knight Clone",
+        unlockAbility: "King's Brand",
+        enemies: ["GreatHopper", "PrimalAspid"]
+    },
+    "The_Hive": {
+        id: 8,
+        color: 0xffaa00,
+        bgMusic: 'buzzing',
+        hazards: ['honey_slow'],
+        boss: "Bees",
+        unlockAbility: "Hiveblood",
+        enemies: ["BeeSentry", "HuskBee"]
+    },
+    "The_Abyss": {
+        id: 9,
+        color: 0x000000,
+        bgMusic: 'silence',
+        hazards: ['void_sea'],
+        boss: "The Void Heart",
+        unlockAbility: "Void Heart",
+        enemies: ["Siblings", "VoidTendrils"]
+    }
+};

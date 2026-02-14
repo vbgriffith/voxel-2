@@ -1,0 +1,39 @@
+class RoomArchitect {
+    static buildRoom(scene, regionId, roomIndex) {
+        const region = Object.values(RegionMatrix).find(r => r.id === regionId);
+        
+        // 1. Set Environment (Colors and Lighting)
+        scene.cameras.main.setBackgroundColor(region.color);
+        FXManager.createAtmosphere(scene, region.color);
+        
+        // 2. Generate Platforms
+        // Rooms are 800x600. We place "Smart Blocks" based on roomIndex.
+        const platforms = scene.physics.add.staticGroup();
+        
+        // Rule: Room 0 of any region always has a Bench (Save Point)
+        if (roomIndex === 0) {
+            this.placeBench(scene, 100, 500);
+        }
+
+        // Rule: Room 14 (The 15th room) always has the Boss
+        if (roomIndex === 14) {
+            this.spawnBoss(scene, region.boss);
+        }
+
+        // 3. Populate Enemies from the region's specific list
+        region.enemies.forEach((enemyType, i) => {
+            const e = new SmartEnemy(scene, 300 + (i * 100), 400, enemyType);
+            scene.enemies.add(e);
+        });
+    }
+
+    static placeBench(scene, x, y) {
+        const bench = scene.physics.add.staticImage(x, y, 'bench');
+        scene.physics.add.overlap(scene.player, bench, () => {
+            if (scene.cursors.down.isDown) {
+                GameState.saveGame();
+                // Show "Game Saved" UI Toast
+            }
+        });
+    }
+}

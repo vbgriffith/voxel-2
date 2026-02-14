@@ -1,0 +1,45 @@
+class SmartEnemy extends Phaser.Physics.Arcade.Sprite {
+    constructor(scene, x, y, type) {
+        super(scene, x, y, 'enemy_' + type);
+        scene.add.existing(this);
+        scene.physics.add.existing(this);
+        
+        this.state = 'IDLE'; // States: IDLE, CHASE, ATTACK, PARRY, RETREAT
+        this.hp = 3;
+        this.visionRange = 300;
+        this.attackRange = 60;
+    }
+
+    update(player) {
+        const dist = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+
+        switch(this.state) {
+            case 'IDLE':
+                if (dist < this.visionRange) this.state = 'CHASE';
+                break;
+                
+            case 'CHASE':
+                this.scene.physics.moveToObject(this, player, 120);
+                if (dist < this.attackRange) this.state = 'ATTACK';
+                if (player.isAttacking) this.state = 'PARRY'; // Reacts to player
+                break;
+
+            case 'ATTACK':
+                this.setVelocity(0);
+                this.playAttackAnimation();
+                this.scene.time.delayedCall(500, () => { this.state = 'RETREAT'; });
+                break;
+
+            case 'PARRY':
+                this.setVelocityX(this.x < player.x ? -300 : 300); // Quick dash away
+                this.scene.time.delayedCall(300, () => { this.state = 'CHASE'; });
+                break;
+                
+            case 'RETREAT':
+                // Moves slightly away to reset the engagement
+                this.setVelocityX(this.x < player.x ? -100 : 100);
+                this.scene.time.delayedCall(1000, () => { this.state = 'CHASE'; });
+                break;
+        }
+    }
+}

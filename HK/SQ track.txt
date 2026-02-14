@@ -1,0 +1,23 @@
+const QuestRegistry = {
+    quests: [
+        { id: "lost_geo", npc: "Sly_Clone", goal: "Collect 500 Geo", reward: "Pale Ore" },
+        { id: "vengeful_spirit", npc: "Shaman", goal: "Defeat 10 Crawlers", reward: "Spell Unlock" },
+        // ... (Extended to 20 quests)
+    ],
+
+    checkProgress: (player) => {
+        QuestRegistry.quests.forEach(q => {
+            if (GameState.completedQuests.includes(q.id)) return;
+            
+            // Logic for "Geo" Quest
+            if (q.id === "lost_geo" && player.stats.geo >= 500) {
+                QuestRegistry.complete(q.id);
+            }
+        });
+    },
+
+    complete: (id) => {
+        GameState.completedQuests.push(id);
+        UIManager.showNotification(`QUEST COMPLETE: ${id.replace('_', ' ')}`);
+    }
+};

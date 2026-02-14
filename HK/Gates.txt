@@ -1,0 +1,13 @@
+function checkRoomTransition(player, door) {
+    const targetRegion = door.targetRegion;
+    const requiredAbility = RegionMatrix[targetRegion].unlockAbility;
+
+    if (player.stats.unlockedAbilities.includes(requiredAbility) || targetRegion === "Forgotten_Crossroads") {
+        // Allow passage
+        loadNewRoom(targetRegion, door.targetRoom);
+    } else {
+        // Polish: Kick player back and show a "Requires Ability" message
+        player.setVelocityX(player.flipX ? 200 : -200);
+        DialogueSystem.showHint("I need a way to move faster to cross this...");
+    }
+}

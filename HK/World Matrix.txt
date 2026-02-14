@@ -1,0 +1,27 @@
+const WorldMatrix = {
+    regions: {
+        "Forgotten_Abyss": {
+            color: 0x222244,
+            rooms: 15,
+            boss: "The Shadow Husk",
+            enemyTypes: ["Crawler", "VoidFlyer"]
+        },
+        "Crystal_Peaks": {
+            color: 0xcc88ff,
+            rooms: 15,
+            boss: "Crystal Guardian",
+            enemyTypes: ["LaserBug", "Miner"]
+        }
+        // ... Repeated for all 10 regions
+    },
+
+    // Generates room data based on room ID
+    getRoomData(roomId) {
+        // Logic to return tilemaps, enemy spawn points, and NPC locations
+        // This pulls from a large static object containing the 150-room layout
+        return {
+            tiles: [[1,1,1], [1,0,1], [1,1,1]], // Simplified example
+            entities: [{ type: 'enemy', id: 'Crawler', x: 400, y: 300 }]
+        };
+    }
+};

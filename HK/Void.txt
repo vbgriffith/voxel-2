@@ -1,0 +1,31 @@
+class VoidSigil extends Phaser.Physics.Arcade.Sprite {
+    constructor(scene, x, y, id) {
+        super(scene, x, y, 'sigil_icon');
+        scene.add.existing(this);
+        this.sigilId = id;
+        
+        // Polished Glow Effect
+        scene.tweens.add({
+            targets: this,
+            alpha: 0.5,
+            yoyo: true,
+            repeat: -1,
+            duration: 1000
+        });
+    }
+
+    collect() {
+        MainQuest.sigilsCollected++;
+        GameState.completedQuests.push(`SIGIL_${this.sigilId}`);
+        
+        // Polish: Flash the screen and play a "Big Event" sound/shake
+        this.scene.cameras.main.flash(1000, 255, 255, 255);
+        FXManager.spawnSoulParticles(this.scene, this.x, this.y);
+        
+        if (MainQuest.sigilsCollected === MainQuest.totalSigils) {
+            MainQuest.currentStep = "OPEN_ABYSS";
+            DialogueSystem.showHint("A Great Seal has broken in the depths...");
+        }
+        this.destroy();
+    }
+}

@@ -1,0 +1,52 @@
+// js/main.js
+const config = {
+    type: Phaser.AUTO,
+    width: 800,
+    height: 600,
+    parent: 'game-container',
+    physics: {
+        default: 'arcade',
+        arcade: { gravity: { y: 1000 }, debug: false }
+    },
+    scene: {
+        preload: preload,
+        create: create,
+        update: update
+    }
+};
+
+const game = new Phaser.Game(config);
+
+function preload() {
+    // Generate all SVGs from js/assets.js
+    this.load.image('knight', GameAssets.generateKnight());
+    this.load.image('ui_mask', UIManager.generateMaskSVG());
+    this.load.image('bench', GameAssets.generateBench());
+    // ... load other generated assets
+}
+
+function create() {
+    // Initialize Systems
+    this.player = new Player(this, 100, 450);
+    this.enemies = this.add.group();
+    
+    UIManager.initHUD(this);
+    RoomArchitect.buildRoom(this, 0, 0); // Start in Forgotten Crossroads
+    
+    // Setup Controls
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.keys = this.input.keyboard.addKeys('Z,X,C,SHIFT,ESC');
+}
+
+function update(time, delta) {
+    this.player.update(this.cursors);
+    
+    // Update AI
+    this.enemies.getChildren().forEach(e => e.update(this.player));
+    
+    // Sync UI
+    UIManager.updateHUD(this, this.player.stats);
+    
+    // Check Narrative Triggers
+    MainQuest.onRoomEnter(this, GameState.currentRoom);
+}

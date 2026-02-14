@@ -1,0 +1,59 @@
+class Player extends Phaser.Physics.Arcade.Sprite {
+    constructor(scene, x, y) {
+        super(scene, x, y, 'knight');
+        scene.add.existing(this);
+        scene.physics.add.existing(this);
+        
+        this.setCollideWorldBounds(true);
+        this.body.setGravityY(1000);
+        this.isDashing = false;
+        this.canDash = true;
+        
+        // Stats for Save System
+        this.stats = {
+            hp: 5,
+            maxHp: 5,
+            soul: 0,
+            geo: 0,
+            unlockedAbilities: ['dash']
+        };
+    }
+
+    update(cursors) {
+        if (this.isDashing) return;
+
+        if (cursors.left.isDown) {
+            this.setVelocityX(-200);
+            this.setFlipX(true);
+        } else if (cursors.right.isDown) {
+            this.setVelocityX(200);
+            this.setFlipX(false);
+        } else {
+            this.setVelocityX(0);
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(cursors.up) && this.body.blocked.down) {
+            this.setVelocityY(-450);
+        }
+        
+        // Dash logic (Shift or Z key)
+        if (cursors.shift.isDown && this.canDash) {
+            this.performDash();
+        }
+    }
+
+    performDash() {
+        this.isDashing = true;
+        this.canDash = false;
+        const dashDir = this.flipX ? -1 : 1;
+        this.setVelocityX(500 * dashDir);
+        this.setVelocityY(0);
+        this.body.allowGravity = false;
+
+        this.scene.time.delayedCall(200, () => {
+            this.isDashing = false;
+            this.body.allowGravity = true;
+            this.scene.time.delayedCall(600, () => { this.canDash = true; });
+        });
+    }
+}

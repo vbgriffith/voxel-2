@@ -1,0 +1,40 @@
+const FXManager = {
+    // Creates the "Nail Slash" arc effect
+    createSlash: (scene, x, y, flip) => {
+        const slash = scene.add.sprite(x + (flip ? -40 : 40), y, 'slash_atlas');
+        slash.setFlipX(flip);
+        slash.play('slash_anim');
+        slash.on('animationcomplete', () => slash.destroy());
+        
+        // Polished touch: Brief Screen Shake on hit
+        scene.cameras.main.shake(100, 0.005);
+    },
+
+    // Generates "Soul" particles when hitting enemies
+    spawnSoulParticles: (scene, x, y) => {
+        const emitter = scene.add.particles(x, y, 'white_dot', {
+            speed: { min: -100, max: 100 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.5, end: 0 },
+            blendMode: 'ADD',
+            lifespan: 400,
+            gravityY: 200,
+            quantity: 5
+        });
+        scene.time.delayedCall(400, () => emitter.destroy());
+    },
+
+    // Atmospheric "Dust" for the Forgotten Abyss
+    createAtmosphere: (scene, regionColor) => {
+        scene.add.particles(0, 0, 'dust_mote', {
+            emitZone: { source: new Phaser.Geom.Rectangle(0, 0, 800, 600) },
+            speedX: { min: -20, max: 20 },
+            speedY: { min: 10, max: 30 },
+            lifespan: 5000,
+            alpha: { start: 0.2, end: 0 },
+            scale: { start: 0.1, end: 0.5 },
+            tint: regionColor,
+            frequency: 100
+        });
+    }
+};

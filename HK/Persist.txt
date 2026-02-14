@@ -1,0 +1,70 @@
+const SaveSystem = {
+    SAVE_KEY: "void_knight_master_save",
+
+    // Captures the entire state for 150 rooms and 20+ quests
+    gatherGameState: (player, worldMatrix) => {
+        return {
+            header: {
+                version: "1.0.0",
+                timestamp: Date.now(),
+                playtime: GameState.totalPlaytime // Tracked in update loop
+            },
+            player: {
+                hp: player.stats.hp,
+                maxHp: player.stats.maxHp,
+                soul: player.stats.soul,
+                geo: player.stats.geo,
+                abilities: player.stats.unlockedAbilities,
+                lastBench: GameState.currentRoom
+            },
+            world: {
+                bossesDefeated: GameState.bossesDefeated, // Array of IDs
+                completedQuests: GameState.completedQuests,
+                openedShortcuts: GameState.shortcuts // Logic for blockers
+            }
+        };
+    },
+
+    // Save to Browser's LocalStorage (The "Bench" mechanic)
+    saveToDisk: (player) => {
+        const data = SaveSystem.gatherGameState(player);
+        localStorage.setItem(SaveSystem.SAVE_KEY, JSON.stringify(data));
+        
+        // Visual Polish: Show "JOURNEY PRESERVED" on screen
+        UIManager.showNotification("JOURNEY PRESERVED");
+    },
+
+    // Export as a downloadable .json file
+    exportToFile: (player) => {
+        const data = SaveSystem.gatherGameState(player);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `void_knight_save_${new Date().toLocaleDateString()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+    },
+
+    // Load from a file upload (Using a hidden input)
+    importFromFile: (file) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const loadedData = JSON.parse(e.target.result);
+            SaveSystem.applySaveData(loadedData);
+        };
+        reader.readAsText(file);
+    },
+
+    applySaveData: (data) => {
+        // Validation to ensure the save isn't corrupted
+        if (!data.player || !data.world) return console.error("Invalid Save File");
+        
+        // Re-initialize the game with these stats
+        Object.assign(player.stats, data.player);
+        GameState.bossesDefeated = data.world.bossesDefeated;
+        // Trigger scene restart to the last bench location
+        window.game.scene.scenes[0].scene.restart();
+    }
+};

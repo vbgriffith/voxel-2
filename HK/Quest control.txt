@@ -1,0 +1,27 @@
+const MainQuest = {
+    currentStep: "WAKE_UP",
+    sigilsCollected: 0,
+    totalSigils: 3,
+
+    steps: {
+        "WAKE_UP": "Explore the Crossroads and find the Elder.",
+        "OBTAIN_DASH": "Defeat the False Knight to unlock movement.",
+        "FIND_SIGILS": "Locate the 3 Sigils hidden in Greenpath, City of Tears, and Deepnest.",
+        "OPEN_ABYSS": "Return to the Temple with all 3 Sigils.",
+        "END_THE_VOID": "Defeat the Core of the Abyss."
+    },
+
+    // Narrative triggers based on room entry
+    onRoomEnter: (scene, roomId) => {
+        if (roomId === "crossroads_01" && MainQuest.currentStep === "WAKE_UP") {
+            DialogueSystem.showHint("The air is cold. I must find the village.");
+            MainQuest.currentStep = "OBTAIN_DASH";
+        }
+
+        // Logic for Sigil collection rooms
+        if (roomId.includes("_boss_room") && !GameState.bossesDefeated.includes(roomId)) {
+            // Trigger Boss Intro UI
+            UIManager.showBossTitle(RegionMatrix[GameState.currentRegion].boss);
+        }
+    }
+};

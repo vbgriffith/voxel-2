@@ -1,0 +1,14 @@
+// Inside Scene Update
+this.enemies.getChildren().forEach(enemy => {
+    enemy.update(this.player);
+});
+
+this.player.update(this.cursors);
+
+// Check for Bench overlap (Save Trigger)
+this.physics.add.overlap(this.player, this.benches, (p, b) => {
+    if (this.cursors.down.isDown) {
+        GameState.saveGame();
+        this.player.stats.hp = this.player.stats.maxHp; // Heal at bench
+    }
+});

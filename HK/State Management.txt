@@ -1,0 +1,27 @@
+const GameState = {
+    currentRoom: "crossroads_01",
+    visitedRooms: [],
+    quests: {
+        main: 0, // 0 to 100 progress
+        side: {} // ID: status
+    },
+
+    saveGame() {
+        const data = JSON.stringify({
+            stats: window.player.stats,
+            state: this
+        });
+        localStorage.setItem('void_knight_save', data);
+        console.log("Progress Saved to Bench");
+    },
+
+    downloadSave() {
+        const data = localStorage.getItem('void_knight_save');
+        const blob = new Blob([data], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'void_knight_progress.json';
+        a.click();
+    }
+};

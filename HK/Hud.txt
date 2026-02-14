@@ -1,0 +1,58 @@
+const UIManager = {
+    // Generate the iconic cracked mask shape
+    generateMaskSVG: () => {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+            <path d="M20 5 C10 5 5 15 5 25 C5 35 15 38 20 38 C25 38 35 35 35 25 C35 15 30 5 20 5" fill="white" stroke="black" stroke-width="2"/>
+            <circle cx="13" cy="20" r="4" fill="black"/>
+            <circle cx="27" cy="20" r="4" fill="black"/>
+        </svg>`;
+        return "data:image/svg+xml;base64," + btoa(svg);
+    },
+
+    initHUD: (scene) => {
+        // 1. The Soul Vessel (Circular Container)
+        scene.uiGroup = scene.add.group();
+        const vesselBG = scene.add.graphics();
+        vesselBG.fillStyle(0x222222, 1);
+        vesselBG.fillCircle(60, 60, 40);
+        vesselBG.lineStyle(4, 0xffffff, 1);
+        vesselBG.strokeCircle(60, 60, 40);
+        vesselBG.setScrollFactor(0); // Fixes UI to camera
+
+        // 2. The Soul Liquid (The part that fills up)
+        scene.soulFill = scene.add.graphics();
+        scene.soulFill.setScrollFactor(0);
+
+        // 3. Health Masks
+        scene.masks = [];
+        for (let i = 0; i < 5; i++) {
+            let m = scene.add.image(130 + (i * 45), 60, 'ui_mask').setScale(0.8);
+            m.setScrollFactor(0);
+            scene.masks.push(m);
+        }
+
+        // 4. Geo Counter
+        scene.geoText = scene.add.text(120, 90, '0', { 
+            fontFamily: 'serif', 
+            fontSize: '24px', 
+            fill: '#fff' 
+        }).setScrollFactor(0);
+    },
+
+    updateHUD: (scene, stats) => {
+        // Update Soul Fill level (0 to 100)
+        scene.soulFill.clear();
+        scene.soulFill.fillStyle(0xffffff, 0.9);
+        const height = (stats.soul / 100) * 80;
+        scene.soulFill.fillCircle(60, 100 - (height/2), height/2);
+
+        // Update Masks (Hide/Show based on HP)
+        scene.masks.forEach((mask, index) => {
+            mask.alpha = (index < stats.hp) ? 1 : 0.2;
+            if (index >= stats.hp) mask.setTint(0x444444);
+        });
+
+        // Geo count animation
+        scene.geoText.setText(stats.geo.toString().padStart(5, '0'));
+    }
+};
